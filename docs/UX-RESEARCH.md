@@ -1,4 +1,4 @@
-# Stickynotee — UX research & design decisions
+# Toonii (formerly Stickynotee) — UX research & design decisions
 
 ## 1. Problem
 

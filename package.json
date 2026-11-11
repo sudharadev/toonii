@@ -1,8 +1,18 @@
 {
   "name": "toonii",
   "productName": "Toonii",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Cartoon sticky notes with googly eyes that float on your desktop. Type or draw.",
+  "author": "Sudhara Lakshan",
+  "license": "MIT",
+  "keywords": [
+    "sticky-notes",
+    "notes",
+    "desktop",
+    "electron",
+    "windows",
+    "macos"
+  ],
   "main": "src/main.js",
   "private": true,
   "scripts": {
@@ -17,20 +27,45 @@
     "files": [
       "src/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false
+      "perMachine": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "shortcutName": "Toonii",
+      "uninstallDisplayName": "Toonii"
     },
     "mac": {
       "target": "dmg",
       "category": "public.app-category.productivity",
       "icon": "assets/icon.png"
+    },
+    "copyright": "Copyright © 2026 Sudhara Lakshan",
+    "directories": {
+      "output": "dist"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
     }
   },
   "devDependencies": {
