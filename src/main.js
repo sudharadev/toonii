@@ -482,7 +482,13 @@ ipcMain.on('note:update', (event, patch) => {
   if (!note) return;
   const clean = sanitize(patch);
   store.update(note.id, clean);
-  if ('pinned' in clean) setOnTop(win, clean.pinned);
+  if ('pinned' in clean) {
+    setOnTop(win, clean.pinned);
+    // Echo the real window state so the pin icon (filled = on top) can never drift from it.
+    const onTop = win.isAlwaysOnTop();
+    if (onTop !== clean.pinned) store.update(note.id, { pinned: onTop });
+    win.webContents.send('note:changed', { pinned: onTop });
+  }
   if ('title' in clean) win.setTitle(clean.title);
 });
 
