@@ -9,71 +9,18 @@
     "sticky-notes",
     "notes",
     "desktop",
-    "electron",
+    "tauri",
     "windows",
     "macos"
   ],
-  "main": "src/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
+    "start": "tauri dev",
+    "build": "tauri build",
     "icons": "node scripts/make-icons.js",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac"
-  },
-  "build": {
-    "appId": "com.toonii.app",
-    "productName": "Toonii",
-    "files": [
-      "src/**/*",
-      "assets/**/*",
-      "package.json",
-      "LICENSE"
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}",
-      "shortcutName": "Toonii",
-      "uninstallDisplayName": "Toonii"
-    },
-    "mac": {
-      "target": "dmg",
-      "category": "public.app-category.productivity",
-      "icon": "assets/icon.png"
-    },
-    "copyright": "Copyright © 2026 Sudhara Lakshan",
-    "directories": {
-      "output": "dist"
-    },
-    "electronDist": "node_modules/electron/dist",
-    "electronLanguages": [
-      "en-US"
-    ],
-    "compression": "maximum",
-    "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
-    }
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "electron": "^45.3.0",
-    "electron-builder": "^26.18.0"
+    "@tauri-apps/cli": "^2.12.4"
   }
 }

@@ -1132,6 +1132,29 @@ api.onChanged((patch) => {
   if ('strokes' in patch) { strokes = note.strokes; queueRedraw(); }
 });
 
+// ---------- right-click menu (rendered by main in its own Toon-styled window) ----------
+
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (!note || !(e.target instanceof Element) || !e.target.closest('.note')) return;
+  const active = document.activeElement;
+  const inTitle = e.target.closest('#title');
+  const editable = !!(inTitle || e.target.closest('#editor'));
+  let selection = false;
+  if (inTitle && active === titleEl) selection = titleEl.selectionStart !== titleEl.selectionEnd;
+  else selection = !!window.getSelection().toString();
+  api.showMenu({ editable, selection });
+});
+
+api.onMenuEdit(({ cmd, text }) => {
+  if (cmd === 'paste') {
+    if (typeof text === 'string' && text) document.execCommand('insertText', false, text);
+  } else {
+    document.execCommand(cmd);
+  }
+  if (document.activeElement === editor) contentChanged();
+});
+
 function focusText() {
   if (!note) { wantFocus = true; return; } // focus request can beat init
   if (note.mode === 'type') focusEnd();
@@ -1425,7 +1448,18 @@ function lookAt(clientX, clientY, hold = false) {
     p.style.setProperty('--py', `${(ux * Math.sin(t) + uy * Math.cos(t)) * reach}px`);
   }
 }
-api.onCursor((sx, sy) => lookAt(sx - window.screenX, sy - window.screenY));
+api.onCursor((x, y) => {
+  lookAt(x, y);
+  // A click-through window gets no mouse events, so use the cursor feed to take clicks
+  // back as soon as the pointer is over the card, panel or toolbar again.
+  if (passthrough && !resizing && !dragging) {
+    const el = document.elementFromPoint(x, y);
+    if (el && el.closest('.note, .format, .panel')) {
+      passthrough = false;
+      api.setPassthrough(false);
+    }
+  }
+});
 
 // While typing, the eyes glance at the caret.
 editor.addEventListener('input', () => {
@@ -1489,4 +1523,5 @@ api.init().then(({ note: n, platform, theme }) => {
   if (document.hasFocus()) document.body.classList.add('focused');
   playEnter();
   if (wantFocus) focusText();
+  requestAnimationFrame(() => api.ready()); // main shows the window once laid out
 });

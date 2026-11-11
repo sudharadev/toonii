@@ -5,3 +5,6 @@ dist/
 Thumbs.db
 .env
 .env.*
+src-tauri/target/
+src-tauri/gen/
+.codegraph/

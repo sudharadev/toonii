@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Note and menu windows: app commands plus event listening.",
+  "windows": ["note-*", "menu"],
+  "permissions": ["core:default"]
+}

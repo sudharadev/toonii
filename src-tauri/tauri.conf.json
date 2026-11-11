@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Toonii",
+  "version": "1.0.0",
+  "identifier": "com.toonii.desktop",
+  "build": {
+    "frontendDist": "../src/renderer"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Sudhara Lakshan",
+    "copyright": "Copyright © 2026 Sudhara Lakshan",
+    "category": "Productivity",
+    "shortDescription": "Cartoon sticky notes with googly eyes",
+    "longDescription": "Cartoon sticky notes with googly eyes that float on your desktop. Type, draw, tick things off.",
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}
