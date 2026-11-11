@@ -171,8 +171,8 @@ function layout() {
     top: `${GUTTER + (H - h) / 2}px`,
     width: `${w}px`,
     height: `${h}px`,
-    rotate: `${note ? note.tilt : 0}deg`,
   });
+  noteEl.style.setProperty('--tilt', `${note ? note.tilt : 0}deg`);
 }
 
 // Client point -> point in the note's own (unrotated) coordinate space, relative to `el`.
@@ -569,6 +569,12 @@ editor.addEventListener('mousedown', (e) => {
   if (lx > box * 1.5) return;
   e.preventDefault();
   li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true';
+  replay(li, 'pop');
+  if (li.dataset.checked === 'true') {
+    const [x, y] = [e.clientX, e.clientY];
+    confetti(x, y);
+    react('surprised', 500);
+  }
   contentChanged();
 });
 
@@ -715,6 +721,7 @@ function setMode(mode) {
   if (note.mode === mode) return;
   note.mode = mode;
   applyMode();
+  replay($('modeBtn'), 'flip');
   api.update({ mode });
   if (mode === 'draw') editor.blur(); else focusEnd();
 }
@@ -729,9 +736,14 @@ function focusEnd() {
   sel.addRange(range);
 }
 
+let closing = false;
 function closeNote() {
+  if (closing) return;
+  closing = true;
   flushText();
-  api.close();
+  if (reduceMotion.matches) { api.close(); return; }
+  poof();
+  setTimeout(() => api.close(), 340);
 }
 
 function setTilt(tilt) {
@@ -752,15 +764,17 @@ styleBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleStylePop(
 pinBtn.addEventListener('click', () => {
   note.pinned = !note.pinned;
   applyPinned();
+  if (note.pinned) replay(pinBtn, 'bump');
   api.update({ pinned: note.pinned });
 });
 
 stylePop.addEventListener('click', (e) => {
   e.stopPropagation();
   const color = e.target.dataset && e.target.dataset.color;
-  if (color) {
+  if (color && color !== note.color) {
     note.color = color;
     applyColor();
+    replay(noteEl, 'jelly');
     api.update({ color });
   }
 });
@@ -818,8 +832,11 @@ bar.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || e.target.closest('button, input')) return;
   e.preventDefault();
   bar.setPointerCapture(e.pointerId);
-  dragging = { sx: e.screenX, sy: e.screenY, wx: window.screenX, wy: window.screenY, raf: 0 };
+  dragging = {
+    sx: e.screenX, sy: e.screenY, wx: window.screenX, wy: window.screenY, raf: 0, lastX: e.screenX, settle: 0,
+  };
   document.body.classList.add('dragging');
+  react('surprised', 350);
 });
 bar.addEventListener('pointermove', (e) => {
   if (!dragging) return;
@@ -827,8 +844,19 @@ bar.addEventListener('pointermove', (e) => {
   const y = dragging.wy + (e.screenY - dragging.sy);
   cancelAnimationFrame(dragging.raf);
   dragging.raf = requestAnimationFrame(() => api.move(x, y));
+  // Sway like paper held at the top: lean into the direction of travel, settle when still.
+  const vx = e.screenX - dragging.lastX;
+  dragging.lastX = e.screenX;
+  setSwing(Math.max(-6, Math.min(6, swingNow * 0.6 + vx * 0.5)));
+  clearTimeout(dragging.settle);
+  dragging.settle = setTimeout(() => setSwing(0), 90);
 });
-const endDrag = () => { dragging = null; document.body.classList.remove('dragging'); };
+const endDrag = () => {
+  if (dragging) clearTimeout(dragging.settle);
+  dragging = null;
+  document.body.classList.remove('dragging');
+  setSwing(0); // the rotate transition overshoots, so it wobbles to rest
+};
 bar.addEventListener('pointerup', endDrag);
 bar.addEventListener('pointercancel', endDrag);
 
@@ -868,7 +896,10 @@ window.addEventListener('resize', () => {
 // ---------- click-through for the transparent gutter ----------
 
 document.addEventListener('mousemove', (e) => {
+  lookAt(e.clientX, e.clientY);
   if (resizing || dragging) return;
+  const overNote = e.target instanceof Element && e.target.closest('.note');
+  if (overNote && !current) sparkleTrail(e.clientX, e.clientY);
   const want = !(e.target instanceof Element && e.target.closest('.note, .format'));
   if (want !== passthrough) {
     passthrough = want;
@@ -904,6 +935,148 @@ function focusText() {
 }
 api.onFocus(focusText);
 
+// ---------- fun: particles, eyes, reactions ----------
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const PARTY = ['#FFD84D', '#FF8FAB', '#6CC8FF', '#7DE38D', '#B79CFF', '#FF9F43'];
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const isToon = () => document.documentElement.dataset.theme === 'toon';
+
+// Restart a CSS animation class on an element.
+function replay(el, cls) {
+  if (reduceMotion.matches) return;
+  el.classList.remove(cls);
+  void el.offsetWidth; // reflow so the animation starts over
+  el.classList.add(cls);
+  el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+}
+
+function particle(cls, x, y, vars) {
+  if (reduceMotion.matches) return null;
+  const el = document.createElement('i');
+  el.className = `fx ${cls}`;
+  el.style.setProperty('--x0', `${x}px`);
+  el.style.setProperty('--y0', `${y}px`);
+  for (const [k, v] of Object.entries(vars)) el.style.setProperty(k, v);
+  document.body.append(el);
+  const done = () => el.remove();
+  el.addEventListener('animationend', done, { once: true });
+  setTimeout(done, 1500);
+  return el;
+}
+
+function confetti(x, y) {
+  for (let i = 0; i < 16; i++) {
+    const a = -Math.PI / 2 + rand(-1.25, 1.25);
+    const sp = rand(28, 70);
+    particle('confetti', x, y, {
+      '--dx': `${Math.cos(a) * sp}px`,
+      '--dy': `${Math.sin(a) * sp}px`,
+      '--rot': `${rand(-540, 540)}deg`,
+      '--col': pick(PARTY),
+    });
+  }
+}
+
+function poof() {
+  react('surprised', 400);
+  hideFormat();
+  noteEl.classList.add('poof');
+  const r = noteEl.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const toon = isToon();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 + rand(-0.2, 0.2);
+    const d = rand(30, 70);
+    particle('puff', cx, cy, {
+      '--dx': `${Math.cos(a) * d}px`,
+      '--dy': `${Math.sin(a) * d}px`,
+      '--s': `${rand(16, 32)}px`,
+      '--col': toon ? '#fff' : 'rgb(255 255 255 / .85)',
+      '--line': toon ? '#17171c' : 'transparent',
+    });
+  }
+}
+
+let lastSpark = 0;
+let lastSparkPos = [0, 0];
+function sparkleTrail(x, y) {
+  if (!isToon() || reduceMotion.matches) return;
+  const now = performance.now();
+  if (now - lastSpark < 45 || Math.hypot(x - lastSparkPos[0], y - lastSparkPos[1]) < 8) return;
+  if (document.querySelectorAll('.spark').length > 24) return;
+  lastSpark = now;
+  lastSparkPos = [x, y];
+  particle('spark', x + rand(-4, 4), y + rand(-4, 4), { '--dx': `${rand(-14, 14)}px`, '--col': pick(PARTY) });
+}
+
+let swingNow = 0;
+function setSwing(deg) {
+  swingNow = deg;
+  noteEl.style.setProperty('--swing', `${deg.toFixed(2)}deg`);
+}
+
+// Googly eyes: pupils point at the cursor anywhere on screen (main streams its position).
+const eyesEl = $('eyes');
+const pupils = [...eyesEl.querySelectorAll('b')];
+let lookHoldUntil = 0;
+function lookAt(clientX, clientY, hold = false) {
+  if (!isToon() || !note) return;
+  if (!hold && Date.now() < lookHoldUntil) return;
+  const t = -((note.tilt + swingNow) * Math.PI) / 180; // undo the note's rotation
+  for (const p of pupils) {
+    const e = p.parentElement.getBoundingClientRect();
+    const dx = clientX - (e.left + e.width / 2);
+    const dy = clientY - (e.top + e.height / 2);
+    const dist = Math.hypot(dx, dy) || 1;
+    const reach = Math.min(3.6, dist / 10);
+    const ux = dx / dist;
+    const uy = dy / dist;
+    p.style.setProperty('--px', `${(ux * Math.cos(t) - uy * Math.sin(t)) * reach}px`);
+    p.style.setProperty('--py', `${(ux * Math.sin(t) + uy * Math.cos(t)) * reach}px`);
+  }
+}
+api.onCursor((sx, sy) => lookAt(sx - window.screenX, sy - window.screenY));
+
+// While typing, the eyes glance at the caret.
+editor.addEventListener('input', () => {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const rects = sel.getRangeAt(0).getClientRects();
+  const r = rects[rects.length - 1];
+  if (!r) return;
+  lookHoldUntil = Date.now() + 900;
+  lookAt(r.right, r.top + r.height / 2, true);
+});
+
+function react(cls, ms) {
+  if (!isToon()) return;
+  eyesEl.classList.add(cls);
+  setTimeout(() => eyesEl.classList.remove(cls), ms);
+}
+
+(function blinkLoop() {
+  setTimeout(() => {
+    if (isToon() && !document.hidden) {
+      react('blink', 120);
+      if (Math.random() < 0.2) setTimeout(() => react('blink', 110), 230);
+    }
+    blinkLoop();
+  }, rand(2500, 6000));
+}());
+
+const PLACEHOLDERS = [
+  'Scribble something…', 'Brain dump zone ✨', "What's cooking?", 'Psst… write here',
+  'Big idea goes here 💡', 'Before you forget…', 'Type it, ship it 🚀',
+];
+
+function playEnter() {
+  if (document.visibilityState === 'visible') replay(noteEl, 'enter');
+  else document.addEventListener('visibilitychange', playEnter, { once: true });
+}
+
 // ---------- boot ----------
 
 api.init().then(({ note: n, platform, theme }) => {
@@ -922,6 +1095,8 @@ api.init().then(({ note: n, platform, theme }) => {
   applyPinned();
   applyMode();
   applyTilt();
+  editor.dataset.placeholder = pick(PLACEHOLDERS);
   if (document.hasFocus()) document.body.classList.add('focused');
+  playEnter();
   if (wantFocus) focusText();
 });

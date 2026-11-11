@@ -69,12 +69,18 @@ text neutral for readability. One global style keeps the desktop coherent.
 
 | Style | Look |
 |---|---|
-| **Aura** (default) | Soft pastel gradient, color glow top-right, white glass edge, neutral text |
+| **Toon** (default) | Bright flat color, ink outlines, hard comic shadow, rounded Fredoka type, googly eyes that follow the mouse, cartoon cursors, sparkle trail |
+| **Aura** | Soft pastel gradient, color glow top-right, white glass edge, neutral text |
 | **Minimal** | Near-white card, color dot + faint tint; follows system dark mode |
 | **Midnight** | Dark card with the note color glowing from the corner |
 | **Classic** | Original paper sticky |
 
 Switch in the palette popover ("Style · all notes") or tray → Style.
+
+**Motion (all styles).** Notes should feel alive but never busy, so everything is
+event-driven and nothing loops while idle: bounce-in on open, "poof" on close, sway while
+dragging that wobbles to rest, squishy buttons, icon wiggle on hover, jelly on color change,
+confetti when a checkbox is ticked. `prefers-reduced-motion` turns all of it off.
 
 ## 7. Visual tokens
 

@@ -29,7 +29,7 @@ npm run dist:mac   # DMG in dist/             (run on a Mac)
 | Bold / Italic / Underline | Ctrl+B / I / U | ⌘B / I / U |
 | Close note | Ctrl+W | ⌘W |
 
-Four styles for all notes: Aura (default), Minimal, Midnight, Classic. Pick one in the palette popover or tray → Style.
+Five styles for all notes: Toon (default: cartoon outlines, googly eyes, custom cursors), Aura, Minimal, Midnight, Classic. Pick one in the palette popover or tray → Style.
 
 Select text to get the format toolbar: font size (− 16 +, or type a number), bold, italic,
 underline, strike, bullets, checklist, and **Aa** for font family, text color and clear.

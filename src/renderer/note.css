@@ -64,12 +64,12 @@ html, body {
 }
 
 /* ---------- colors: pastel bg, deep ink, vivid hue ---------- */
-[data-color="yellow"] { --c-bg: #FFE7A3; --c-ink: #8A5A00; --c-hue: #F5B400; }
-[data-color="blue"]   { --c-bg: #A8E6FF; --c-ink: #17609E; --c-hue: #2F8CFF; }
-[data-color="green"]  { --c-bg: #BFF5C3; --c-ink: #1E7A38; --c-hue: #22B864; }
-[data-color="pink"]   { --c-bg: #FFC4C4; --c-ink: #B5182B; --c-hue: #FF4D6D; }
-[data-color="purple"] { --c-bg: #E2CCFF; --c-ink: #6B2FB3; --c-hue: #8B5CF6; }
-[data-color="gray"]   { --c-bg: #E9E9EE; --c-ink: #3D3D47; --c-hue: #8E8E99; }
+[data-color="yellow"] { --c-bg: #FFE7A3; --c-ink: #8A5A00; --c-hue: #F5B400; --c-toon: #FFD84D; }
+[data-color="blue"]   { --c-bg: #A8E6FF; --c-ink: #17609E; --c-hue: #2F8CFF; --c-toon: #6CC8FF; }
+[data-color="green"]  { --c-bg: #BFF5C3; --c-ink: #1E7A38; --c-hue: #22B864; --c-toon: #7DE38D; }
+[data-color="pink"]   { --c-bg: #FFC4C4; --c-ink: #B5182B; --c-hue: #FF4D6D; --c-toon: #FF8FAB; }
+[data-color="purple"] { --c-bg: #E2CCFF; --c-ink: #6B2FB3; --c-hue: #8B5CF6; --c-toon: #B79CFF; }
+[data-color="gray"]   { --c-bg: #E9E9EE; --c-ink: #3D3D47; --c-hue: #8E8E99; --c-toon: #D6D6E0; }
 
 /* ---------- styles (global, on <html data-theme>) ----------
    Each style defines: --surface (background), --text (body), --ui (icons/title),
@@ -169,10 +169,14 @@ html, body {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--edge), var(--shadow);
-  transition: box-shadow .18s ease, color .2s ease, rotate .2s ease;
+  /* tilt is the user's setting; swing is the temporary sway while dragging */
+  rotate: calc(var(--tilt, 0deg) + var(--swing, 0deg));
+  transition:
+    box-shadow .18s ease, color .2s ease, translate .18s ease,
+    rotate .55s cubic-bezier(.3, 1.9, .45, 1), scale .25s cubic-bezier(.3, 1.6, .5, 1);
 }
 body.focused .note { box-shadow: var(--edge), var(--shadow-focus); }
-body.dragging .note { transition: none; }
+body.dragging .note { scale: .97; transition: rotate .12s linear, scale .2s cubic-bezier(.3, 1.6, .5, 1), box-shadow .18s; }
 
 /* ---------- header ---------- */
 .bar {
@@ -603,3 +607,267 @@ canvas {
 }
 .grip:hover { opacity: .8; }
 .grip svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; }
+
+/* =====================================================================
+   Motion (all styles). Event-driven only: nothing animates while idle.
+   ===================================================================== */
+
+@keyframes note-in {
+  0%   { transform: scale(.4) rotate(-10deg); opacity: 0; }
+  55%  { transform: scale(1.05) rotate(2deg); opacity: 1; }
+  78%  { transform: scale(.985) rotate(-.8deg); }
+  100% { transform: none; }
+}
+@keyframes note-poof {
+  0%   { transform: none; }
+  30%  { transform: scale(1.08) rotate(-3deg); }
+  100% { transform: scale(0) rotate(16deg); opacity: 0; }
+}
+@keyframes note-jelly {
+  0%, 100% { transform: scale(1, 1); }
+  25% { transform: scale(1.05, .95); }
+  50% { transform: scale(.97, 1.03); }
+  75% { transform: scale(1.015, .985); }
+}
+.note.enter { animation: note-in .55s cubic-bezier(.3, 1.3, .5, 1) both; }
+.note.jelly { animation: note-jelly .45s ease; }
+.note.poof  { animation: note-poof .34s cubic-bezier(.5, 0, .8, .4) forwards; }
+
+/* squishy buttons */
+.icon, .chip, .step, .swatches button, .themes button, .fonts button, .colors [data-tc], .font-btn {
+  transition: opacity .15s, background-color .15s, scale .18s cubic-bezier(.3, 1.8, .5, 1);
+}
+.icon:active, .chip:active, .step:active, .swatches button:active,
+.themes button:active, .fonts button:active, .colors [data-tc]:active { scale: .84; }
+
+@keyframes wiggle {
+  0%, 100% { rotate: 0deg; }
+  25% { rotate: -14deg; }
+  60% { rotate: 10deg; }
+}
+.icon:hover > .i, .chip:hover > .i { animation: wiggle .42s ease; }
+
+@keyframes pin-drop {
+  0%   { transform: translateY(-7px) rotate(-35deg); }
+  60%  { transform: translateY(1px) rotate(8deg); }
+  100% { transform: none; }
+}
+#pinBtn.bump .i { animation: pin-drop .42s cubic-bezier(.3, 1.6, .5, 1); }
+
+@keyframes chip-flip {
+  0% { transform: rotateX(0); }
+  50% { transform: rotateX(90deg) scale(.9); }
+  100% { transform: rotateX(0); }
+}
+.chip.flip { animation: chip-flip .36s ease; }
+
+@keyframes box-pop {
+  0% { scale: .4; }
+  60% { scale: 1.25; }
+  100% { scale: 1; }
+}
+.editor ul[data-check] > li.pop::before { animation: box-pop .38s cubic-bezier(.3, 1.6, .5, 1); }
+
+/* particles (confetti, sparkle trail, poof puffs) live in body, never in saved content */
+.fx {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.confetti {
+  width: 7px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--col);
+  animation: confetti .85s cubic-bezier(.2, .7, .4, 1) forwards;
+}
+@keyframes confetti {
+  0%   { transform: translate(var(--x0), var(--y0)) rotate(0) scale(1); opacity: 1; }
+  55%  { transform: translate(calc(var(--x0) + var(--dx)), calc(var(--y0) + var(--dy))) rotate(calc(var(--rot) * .6)); opacity: 1; }
+  100% { transform: translate(calc(var(--x0) + var(--dx) * 1.2), calc(var(--y0) + var(--dy) + 34px)) rotate(var(--rot)) scale(.6); opacity: 0; }
+}
+.spark {
+  width: 11px;
+  height: 11px;
+  background: var(--col);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  animation: spark .7s ease-out forwards;
+}
+@keyframes spark {
+  0%   { transform: translate(var(--x0), var(--y0)) scale(1) rotate(0); opacity: 1; }
+  100% { transform: translate(calc(var(--x0) + var(--dx)), calc(var(--y0) + 18px)) scale(0) rotate(180deg); opacity: 0; }
+}
+.puff {
+  width: var(--s);
+  height: var(--s);
+  margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  border-radius: 50%;
+  background: var(--col);
+  box-shadow: inset 0 0 0 2px var(--line, transparent);
+  animation: puff .5s ease-out forwards;
+}
+@keyframes puff {
+  0%   { transform: translate(var(--x0), var(--y0)) scale(.2); opacity: 1; }
+  100% { transform: translate(calc(var(--x0) + var(--dx)), calc(var(--y0) + var(--dy))) scale(1.3); opacity: 0; }
+}
+
+/* googly eyes (shown by Toon) */
+.eyes { display: none; gap: 1px; margin: 0 2px 0 -4px; flex: none; }
+.eye {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px #17171c;
+  transition: transform .07s ease;
+}
+.eye b {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #17171c;
+  translate: var(--px, 0px) var(--py, 0px);
+  transition: translate .09s linear;
+}
+.eye b::after {
+  content: "";
+  position: absolute;
+  top: 1.2px;
+  left: 1.2px;
+  width: 2.4px;
+  height: 2.4px;
+  border-radius: 50%;
+  background: #fff;
+}
+.eyes.blink .eye { transform: scaleY(.1); }
+.eyes.surprised .eye { transform: scale(1.25); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .fx { display: none; }
+}
+
+/* =====================================================================
+   Toon style: ink outlines, hard comic shadows, bright color, rounded type,
+   googly eyes, cartoon cursors.
+   ===================================================================== */
+
+@font-face {
+  font-family: "Fredoka";
+  src: url("fonts/fredoka.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: block;
+}
+
+:root[data-theme="toon"] {
+  --font-sans: "Fredoka", "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
+  --font-display: "Fredoka", "Segoe UI Variable Display", -apple-system, system-ui, sans-serif;
+  --pop-bg: #ffffff;
+  --pop-text: #17171c;
+  --pop-soft: color-mix(in srgb, var(--c-toon) 35%, transparent);
+  --pop-softer: var(--c-toon);
+  --pop-edge: #17171c;
+  --tc-accent: color-mix(in srgb, var(--c-toon) 45%, black);
+  cursor: url("cursors/arrow.svg") 4 3, default;
+}
+:root[data-theme="toon"] .note {
+  --radius: 18px;
+  --surface: var(--c-toon);
+  --text: #17171c;
+  --ui: #17171c;
+  --pen: #17171c;
+  --edge: inset 0 0 0 2.5px #17171c;
+  --panel: #ffffff;
+  --shadow: 5px 5px 0 #17171c;
+  --shadow-focus: 7px 7px 0 #17171c;
+  --soft: rgb(255 255 255 / .55);
+  --softer: rgb(255 255 255 / .85);
+}
+:root[data-theme="toon"] body.focused .note { translate: -1px -1px; }
+:root[data-theme="toon"] body.dragging .note { box-shadow: var(--edge), 9px 10px 0 rgb(23 23 28 / .9); }
+
+/* halftone dots fading in from the bottom-right corner */
+:root[data-theme="toon"] .note::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle, rgb(0 0 0 / .13) 1.3px, transparent 1.8px) 0 0 / 9px 9px;
+  -webkit-mask-image: radial-gradient(120% 90% at 100% 100%, #000 0%, transparent 55%);
+  mask-image: radial-gradient(120% 90% at 100% 100%, #000 0%, transparent 55%);
+}
+
+:root[data-theme="toon"] .dot { display: none; }
+:root[data-theme="toon"] .eyes { display: inline-flex; }
+:root[data-theme="toon"] .title { font-size: 16px; font-weight: 600; letter-spacing: 0; }
+:root[data-theme="toon"] .editor { font-weight: 450; line-height: 1.28; }
+:root[data-theme="toon"] .editor:empty::before { color: rgb(23 23 28 / .45); }
+:root[data-theme="toon"] .editor ::selection { background: rgb(255 255 255 / .75); }
+
+:root[data-theme="toon"] .chip {
+  background: #fff;
+  box-shadow: 0 0 0 2px #17171c, 2px 2px 0 2px #17171c;
+  margin-right: 2px;
+  font-weight: 600;
+  transition: translate .12s, box-shadow .12s, scale .18s cubic-bezier(.3, 1.8, .5, 1);
+}
+:root[data-theme="toon"] .chip:hover { translate: -1px -1px; box-shadow: 0 0 0 2px #17171c, 3px 3px 0 2px #17171c; background: #fff; }
+:root[data-theme="toon"] .icon { opacity: 1; border-radius: 10px; }
+:root[data-theme="toon"] .icon:hover { background: rgb(255 255 255 / .6); }
+:root[data-theme="toon"] .sep { width: 2px; border-radius: 2px; background: rgb(23 23 28 / .35); }
+:root[data-theme="toon"] .on-hover { opacity: 0; }
+:root[data-theme="toon"] .note:hover .on-hover,
+:root[data-theme="toon"] .note:focus-within .on-hover,
+:root[data-theme="toon"] .on-hover.open { opacity: 1; }
+:root[data-theme="toon"] .i { stroke-width: 2.4; }
+
+:root[data-theme="toon"] .draw-tools {
+  background: #fff;
+  backdrop-filter: none;
+  box-shadow: 0 0 0 2px #17171c, 3px 3px 0 2px #17171c;
+}
+:root[data-theme="toon"] .draw-tools .icon[aria-pressed="true"] { background: var(--c-toon); }
+
+:root[data-theme="toon"] .pop,
+:root[data-theme="toon"] .format {
+  border-radius: 16px;
+  box-shadow: 0 0 0 2.5px #17171c, 4px 4px 0 2.5px #17171c;
+}
+:root[data-theme="toon"] .format .icon.active,
+:root[data-theme="toon"] .themes button[aria-checked="true"],
+:root[data-theme="toon"] .fonts button.active,
+:root[data-theme="toon"] .more-btn[aria-expanded="true"] { background: var(--c-toon); box-shadow: inset 0 0 0 2px #17171c; }
+:root[data-theme="toon"] .stepper { background: #fff; box-shadow: inset 0 0 0 2px #17171c; }
+:root[data-theme="toon"] .swatches button { background: var(--c-toon); box-shadow: inset 0 0 0 2px #17171c; }
+:root[data-theme="toon"] .style-pop .swatches button[aria-checked="true"] { box-shadow: inset 0 0 0 2px #17171c, 0 0 0 2px #fff, 0 0 0 4px #17171c; }
+
+:root[data-theme="toon"] .editor ul[data-check] > li::before {
+  border-color: #17171c;
+  background-color: #fff;
+  border-width: max(2px, calc(var(--box, .9em) * .12));
+}
+:root[data-theme="toon"] .editor ul[data-check] > li[data-checked="true"]::before { background-color: #17171c; border-color: #17171c; }
+:root[data-theme="toon"] .editor li::marker { color: #17171c; }
+:root[data-theme="toon"] .editor ul[data-check] > li[data-checked="true"] { color: rgb(23 23 28 / .5); }
+
+:root[data-theme="toon"] .grip { color: #17171c; opacity: .7; }
+
+/* cartoon cursors */
+:root[data-theme="toon"] button,
+:root[data-theme="toon"] .editor ul[data-check] > li::before,
+:root[data-theme="toon"] input[type="range"] { cursor: url("cursors/point.svg") 11 3, pointer; }
+:root[data-theme="toon"] .bar { cursor: url("cursors/grab.svg") 15 9, grab; }
+:root[data-theme="toon"] body.dragging,
+:root[data-theme="toon"] body.dragging * { cursor: url("cursors/grabbing.svg") 16 15, grabbing !important; }
+:root[data-theme="toon"] [data-mode="draw"] canvas { cursor: url("cursors/pencil.svg") 6 26, crosshair; }
+:root[data-theme="toon"] [data-mode="draw"][data-tool="eraser"] canvas { cursor: url("cursors/eraser.svg") 16 16, cell; }
+
+.tp-toon { background: #FFD84D; box-shadow: inset 0 0 0 2px #17171c, 2px 2px 0 #17171c; }

@@ -16,11 +16,14 @@ const COLORS = [
   ['pink', 'Pink'], ['purple', 'Purple'], ['gray', 'Gray'],
 ];
 const COLOR_IDS = COLORS.map(([id]) => id);
-const THEMES = [['aura', 'Aura'], ['minimal', 'Minimal'], ['midnight', 'Midnight'], ['classic', 'Classic']];
+const THEMES = [
+  ['toon', 'Toon'], ['aura', 'Aura'], ['minimal', 'Minimal'], ['midnight', 'Midnight'], ['classic', 'Classic'],
+];
 const THEME_IDS = THEMES.map(([id]) => id);
+const DEFAULT_THEME = 'toon';
 const currentTheme = () => {
-  const t = store.getSetting('theme', 'aura');
-  return THEME_IDS.includes(t) ? t : 'aura';
+  const t = store.getSetting('theme', DEFAULT_THEME);
+  return THEME_IDS.includes(t) ? t : DEFAULT_THEME;
 };
 const SHORTCUTS = { newNote: 'CommandOrControl+Alt+N', toggleAll: 'CommandOrControl+Alt+H' };
 
@@ -193,6 +196,28 @@ function setTheme(theme) {
   store.setSetting('theme', theme);
   windows.forEach((w) => { if (!w.isDestroyed()) w.webContents.send('app:theme', theme); });
   refreshTray();
+  updateCursorFeed();
+}
+
+// Toon notes have googly eyes that follow the mouse anywhere on screen, so stream the
+// global cursor position to visible notes while that style is active.
+let cursorTimer = null;
+let lastCursor = null;
+function updateCursorFeed() {
+  const want = currentTheme() === 'toon';
+  if (want && !cursorTimer) {
+    cursorTimer = setInterval(() => {
+      const p = screen.getCursorScreenPoint();
+      if (lastCursor && p.x === lastCursor.x && p.y === lastCursor.y) return;
+      lastCursor = p;
+      windows.forEach((w) => {
+        if (!w.isDestroyed() && w.isVisible()) w.webContents.send('app:cursor', p.x, p.y);
+      });
+    }, 50);
+  } else if (!want && cursorTimer) {
+    clearInterval(cursorTimer);
+    cursorTimer = null;
+  }
 }
 
 function anyVisible() {
@@ -454,6 +479,12 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.platform === 'win32') app.setAppUserModelId('com.stickynotee.app');
     store.load(app.getPath('userData'));
+    // One-time switch to the Toon style when it ships; later choices are respected.
+    if (!store.getSetting('toonIntroduced', false)) {
+      store.setSetting('theme', 'toon');
+      store.setSetting('toonIntroduced', true);
+    }
+    updateCursorFeed();
     createAppMenu();
     createTray();
     registerShortcuts();

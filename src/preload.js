@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('sticky', {
   onFocus: (cb) => ipcRenderer.on('note:focus', () => cb()),
   setTheme: (theme) => ipcRenderer.send('app:set-theme', theme),
   onTheme: (cb) => ipcRenderer.on('app:theme', (_e, theme) => cb(theme)),
+  onCursor: (cb) => ipcRenderer.on('app:cursor', (_e, x, y) => cb(x, y)),
 });
