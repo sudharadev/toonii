@@ -20,6 +20,8 @@ function normalize(n) {
     text: typeof n.text === 'string' ? n.text : '',
     html: typeof n.html === 'string' ? n.html : null, // null = legacy plain-text note
     tilt: Number.isFinite(n.tilt) ? n.tilt : 0,
+    fontBase: Number.isFinite(n.fontBase) ? n.fontBase : null, // frozen text size once sized by hand
+    lineHeight: Number.isFinite(n.lineHeight) ? n.lineHeight : null, // null = style default
     strokes: Array.isArray(n.strokes) ? n.strokes : [],
     pinned: !!n.pinned,
     bounds: n.bounds || null,

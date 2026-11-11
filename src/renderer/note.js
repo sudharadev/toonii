@@ -102,40 +102,31 @@ function flushText() {
   api.update({ html: editorHtml(), text: editorText() });
 }
 
-// Saved HTML without the measured checkbox variables (they are recomputed on load).
+// Saved HTML without runtime-only bits: the synced item font sizes and animation classes.
 function editorHtml() {
   const clone = editor.cloneNode(true);
-  for (const li of clone.querySelectorAll('li[style]')) {
-    li.style.removeProperty('--box');
-    li.style.removeProperty('--box-top');
+  for (const li of clone.querySelectorAll('li[data-checked]')) {
+    li.style.removeProperty('font-size');
     if (!li.getAttribute('style')) li.removeAttribute('style');
   }
+  for (const el of clone.querySelectorAll('[class]')) el.removeAttribute('class');
   return clone.innerHTML;
 }
 
-// Size and vertically center each checkbox on its item's first character, so the box
-// follows the text size even when the size lives on an inner span.
+// Give each checklist item the font size of its first sized text. The checkbox is drawn in
+// em/lh units of the item, so it then matches that text and centers on its first line.
 function syncCheckboxes() {
   for (const li of editor.querySelectorAll('ul[data-check] > li')) {
+    li.style.removeProperty('font-size'); // measure against the inherited size
     const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
     });
     const text = walker.nextNode();
-    let fs = parseFloat(getComputedStyle(li).fontSize);
-    let centerY = null;
-    if (text) {
-      fs = parseFloat(getComputedStyle(text.parentElement).fontSize);
-      const i = text.data.search(/\S/);
-      const r = document.createRange();
-      r.setStart(text, i);
-      r.setEnd(text, i + 1);
-      const rect = r.getBoundingClientRect();
-      centerY = toLocal(rect.left + rect.width / 2, rect.top + rect.height / 2, li)[1];
+    const sized = text && text.parentElement !== li
+      && text.parentElement.closest('[style*="font-size"], [data-size]');
+    if (sized && li.contains(sized)) {
+      li.style.fontSize = getComputedStyle(text.parentElement).fontSize;
     }
-    const box = Math.max(10, Math.round(fs * 0.9 * 10) / 10);
-    li.style.setProperty('--box', `${box}px`);
-    if (centerY === null) li.style.removeProperty('--box-top');
-    else li.style.setProperty('--box-top', `${Math.round((centerY - box / 2) * 10) / 10}px`);
   }
 }
 
@@ -253,8 +244,26 @@ function setTool(t) {
 }
 
 // Largest base font size at which the text still fits without scrolling.
+const hasManualSizes = () => !!editor.querySelector('[style*="font-size"]:not(li), [data-size]');
+
 function fitText() {
   fitQueued = false;
+  // Once the user sizes text themselves, auto-fit stops: otherwise sizing one line would
+  // make every other line jump. The base is frozen at the last auto value (note.fontBase).
+  if (hasManualSizes()) {
+    if (!note.fontBase) {
+      note.fontBase = parseFloat(editor.style.getPropertyValue('--base')) || FONT_EMPTY;
+      api.update({ fontBase: note.fontBase });
+    }
+    editor.style.setProperty('--base', `${note.fontBase}px`);
+    syncCheckboxes();
+    if (!format.hidden) positionFormat();
+    return;
+  }
+  if (note.fontBase) {
+    note.fontBase = null; // all manual sizes cleared: back to auto-fit
+    api.update({ fontBase: null });
+  }
   if (!editor.textContent) {
     editor.style.setProperty('--base', `${FONT_EMPTY}px`);
     syncCheckboxes();
@@ -441,6 +450,11 @@ function wrapSelection(decorate, clean) {
     span.querySelectorAll('*').forEach(clean);
     f.replaceWith(span);
     spans.push(span);
+    // Ancestors that wrap exactly this text would otherwise pile up (31px > 30px > 29px…):
+    // strip the same property from them so the new span is the only one that sets it.
+    for (let p = span.parentElement; p && p !== editor && p.textContent === span.textContent; p = p.parentElement) {
+      if (p.tagName === 'SPAN') clean(p);
+    }
   }
   unwrapBareSpans();
   const live = spans.filter((s) => s.isConnected);
@@ -483,6 +497,11 @@ function currentSize() {
 
 function setSize(px) {
   const size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, Math.round(px)));
+  // Freeze the auto-fit base at what the user sees right now, before the first manual size.
+  if (!hasManualSizes() && !note.fontBase) {
+    note.fontBase = parseFloat(editor.style.getPropertyValue('--base')) || FONT_EMPTY;
+    api.update({ fontBase: note.fontBase });
+  }
   wrapSelection(
     (s) => { s.style.fontSize = `${size}px`; },
     (el) => { el.style.removeProperty('font-size'); delete el.dataset.size; },
@@ -565,11 +584,12 @@ editor.addEventListener('mousedown', (e) => {
   const li = e.target instanceof Element && e.target.closest('ul[data-check] > li');
   if (!li || note.mode !== 'type') return;
   const [lx] = toLocal(e.clientX, e.clientY, li);
-  const box = parseFloat(li.style.getPropertyValue('--box')) || parseFloat(getComputedStyle(li).fontSize) * 0.9;
-  if (lx > box * 1.5) return;
+  // The box is .9em wide in the item's own font size; accept the whole gutter left of the text.
+  const em = parseFloat(getComputedStyle(li).fontSize);
+  if (lx > Math.max(em * 1.45, 18)) return;
   e.preventDefault();
   li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true';
-  replay(li, 'pop');
+  replay(li, 'tick-pop'); // not "pop": that is the popover class
   if (li.dataset.checked === 'true') {
     const [x, y] = [e.clientX, e.clientY];
     confetti(x, y);
@@ -746,10 +766,100 @@ function closeNote() {
   setTimeout(() => api.close(), 340);
 }
 
-function setTilt(tilt) {
-  note.tilt = tilt;
-  applyTilt();
-  api.update({ tilt });
+// ---------- rotation: slider, menu, or hold the top bar (or Alt) and scroll ----------
+
+const MAX_TILT = 15;
+const WIN_MIN = { width: 300, height: 170 }; // mirrors MIN_SIZE in main.js
+let tiltGesture = null;
+let tiltSaveTimer = null;
+let badgeTimer = null;
+let wheelAcc = 0;
+
+// Rotate while keeping the card's size: the window grows/shrinks around its center to fit
+// the rotated card instead of the card shrinking inside a fixed window.
+function rotateTo(target, { save = true } = {}) {
+  const t = Math.max(-MAX_TILT, Math.min(MAX_TILT, Math.round(target)));
+  if (t === note.tilt) return;
+  if (!tiltGesture) tiltGesture = { w: noteEl.offsetWidth, h: noteEl.offsetHeight };
+  clearTimeout(tiltGesture.timer);
+  tiltGesture.timer = setTimeout(() => { tiltGesture = null; }, 600);
+  const { w, h } = tiltGesture;
+  const r = (Math.abs(t) * Math.PI) / 180;
+  const W = Math.max(WIN_MIN.width, Math.ceil(w * Math.cos(r) + h * Math.sin(r) + GUTTER * 2));
+  const H = Math.max(WIN_MIN.height, Math.ceil(w * Math.sin(r) + h * Math.cos(r) + GUTTER * 2));
+  const dW = W - window.innerWidth;
+  const dH = H - window.innerHeight;
+  if (dragging) { dragging.wx -= dW / 2; dragging.wy -= dH / 2; }
+  note.tilt = t;
+  tiltInput.value = String(t);
+  $('tiltReset').textContent = `${t > 0 ? '+' : ''}${t}°`;
+  noteEl.style.setProperty('--tilt', `${t}deg`);
+  if (dW || dH) api.resizeCentered(W, H); else layout(); // resize event re-runs layout
+  showTiltBadge(t);
+  if (save) {
+    clearTimeout(tiltSaveTimer);
+    tiltSaveTimer = setTimeout(() => api.update({ tilt: note.tilt }), 250);
+  }
+}
+
+function showTiltBadge(t) {
+  const badge = $('tiltBadge');
+  badge.textContent = `${t > 0 ? '+' : ''}${t}°`;
+  badge.hidden = false;
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => { badge.hidden = true; }, 700);
+}
+
+let rotatedWhileHeld = false;
+let pressedOnCard = false;
+noteEl.addEventListener('pointerdown', () => { pressedOnCard = true; });
+window.addEventListener('pointerup', () => { pressedOnCard = false; });
+window.addEventListener('blur', () => { pressedOnCard = false; });
+// Listen on the whole window: as the card turns, the held pointer can end up just outside it.
+window.addEventListener('wheel', (e) => {
+  // Hold the mouse button anywhere on the card (or hold Alt over it) and scroll to rotate.
+  const held = !!dragging || (pressedOnCard && (e.buttons & 1) === 1);
+  const overCard = e.target instanceof Element && noteEl.contains(e.target);
+  if (!held && !(e.altKey && overCard)) return;
+  e.preventDefault();
+  if (held) rotatedWhileHeld = true;
+  wheelAcc += e.deltaY || e.deltaX;
+  const steps = Math.trunc(wheelAcc / 50); // one mouse-wheel notch ≈ 2°
+  if (!steps) return;
+  wheelAcc -= steps * 50;
+  rotateTo(note.tilt + steps);
+}, { passive: false });
+
+// Releasing the button after a hold-and-scroll rotate must not also "click" what was under it.
+document.addEventListener('click', (e) => {
+  if (!rotatedWhileHeld) return;
+  rotatedWhileHeld = false;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+document.addEventListener('pointerdown', () => { rotatedWhileHeld = false; }, true);
+
+// ---------- line spacing ----------
+
+function applyLineHeight() {
+  if (note.lineHeight) editor.style.setProperty('--lh', String(note.lineHeight));
+  else editor.style.removeProperty('--lh');
+  for (const b of document.querySelectorAll('.spacing [data-lh]')) {
+    b.setAttribute('aria-checked', String((Number(b.dataset.lh) || null) === (note.lineHeight || null)));
+  }
+  queueFit();
+}
+
+for (const group of document.querySelectorAll('.spacing')) {
+  group.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-lh]');
+    if (!b) return;
+    e.stopPropagation();
+    note.lineHeight = Number(b.dataset.lh) || null;
+    applyLineHeight();
+    api.update({ lineHeight: note.lineHeight });
+    if (!format.hidden) positionFormat();
+  });
 }
 
 function toggleStylePop(open = stylePop.hidden) {
@@ -778,8 +888,8 @@ stylePop.addEventListener('click', (e) => {
     api.update({ color });
   }
 });
-tiltInput.addEventListener('input', () => setTilt(Number(tiltInput.value)));
-$('tiltReset').addEventListener('click', () => setTilt(0));
+tiltInput.addEventListener('input', () => rotateTo(Number(tiltInput.value)));
+$('tiltReset').addEventListener('click', () => rotateTo(0));
 
 document.addEventListener('click', (e) => {
   if (!stylePop.hidden && !stylePop.contains(e.target)) toggleStylePop(false);
@@ -921,6 +1031,10 @@ window.addEventListener('beforeunload', flushText);
 // ---------- messages from main ----------
 
 api.onChanged((patch) => {
+  if ('tilt' in patch) { // context menu tilt: rotate keeping the card size
+    rotateTo(patch.tilt, { save: false });
+    delete patch.tilt;
+  }
   Object.assign(note, patch);
   if ('color' in patch) applyColor();
   if ('pinned' in patch) applyPinned();
@@ -1095,6 +1209,8 @@ api.init().then(({ note: n, platform, theme }) => {
   applyPinned();
   applyMode();
   applyTilt();
+  if (note.fontBase) editor.style.setProperty('--base', `${note.fontBase}px`);
+  applyLineHeight();
   editor.dataset.placeholder = pick(PLACEHOLDERS);
   if (document.hasFocus()) document.body.classList.add('focused');
   playEnter();

@@ -69,10 +69,17 @@
         <button data-color="purple" title="Purple" role="radio"></button>
         <button data-color="gray" title="Gray" role="radio"></button>
       </div>
-      <div class="pop-label">Tilt</div>
+      <div class="pop-label">Line spacing</div>
+      <div class="spacing" role="radiogroup" aria-label="Line spacing">
+        <button data-lh="1.05" title="Tight" role="radio"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16"/></svg></button>
+        <button data-lh="" title="Normal" role="radio"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button data-lh="1.55" title="Relaxed" role="radio"><svg viewBox="0 0 24 24"><path d="M4 5.5h16M4 12h16M4 18.5h16"/></svg></button>
+        <button data-lh="1.9" title="Loose" role="radio"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 12h16M4 20h16"/></svg></button>
+      </div>
+      <div class="pop-label">Tilt <span class="hint">· or hold the top bar and scroll</span></div>
       <div class="tilt-row">
         <svg class="i"><use href="#i-rotate"/></svg>
-        <input type="range" id="tilt" min="-5" max="5" step="0.5" value="0" aria-label="Tilt">
+        <input type="range" id="tilt" min="-15" max="15" step="1" value="0" aria-label="Tilt">
         <button class="icon sm" id="tiltReset" title="Straighten">0°</button>
       </div>
     </div>
@@ -93,6 +100,8 @@
       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M11 4 4 11M11 8l-3 3"/></svg>
     </div>
   </div>
+
+  <div class="tilt-badge" id="tiltBadge" hidden>0°</div>
 
   <!-- Floating format toolbar: outside .note so it never rotates. -->
   <div class="format" id="format" role="toolbar" aria-label="Text formatting" hidden>
@@ -120,6 +129,12 @@
         <button data-font="mono">Mono</button>
         <button data-font="hand">Hand</button>
         <button data-font="marker">Marker</button>
+      </div>
+      <div class="spacing" role="radiogroup" aria-label="Line spacing">
+        <button data-lh="1.05" title="Tight spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16"/></svg></button>
+        <button data-lh="" title="Normal spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button data-lh="1.55" title="Relaxed spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 5.5h16M4 12h16M4 18.5h16"/></svg></button>
+        <button data-lh="1.9" title="Loose spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 12h16M4 20h16"/></svg></button>
       </div>
       <div class="colors">
         <button data-tc="" title="Default color"></button>

@@ -388,7 +388,7 @@ button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
   /* constant text width whether or not the scrollbar shows, so auto-fit can't flip-flop */
   scrollbar-gutter: stable;
   font-size: var(--base);
-  line-height: 1.32;
+  line-height: var(--lh, 1.32);
   letter-spacing: -.003em;
   overflow-wrap: anywhere;
   user-select: text;
@@ -421,19 +421,19 @@ button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 
 /* Checklists */
 .editor ul[data-check] { list-style: none; padding-left: 0; }
-/* --box / --box-top are measured per item by note.js from the item's first character,
-   so the checkbox tracks the text size even when the size is set on an inner span. */
-.editor ul[data-check] > li { position: relative; padding-left: calc(var(--box, .9em) * 1.6); }
+/* note.js gives each item the font size of its sized text, so em units here track the
+   text and 1lh is exactly the first line's height: the box stays sized and centered. */
+.editor ul[data-check] > li { position: relative; padding-left: 1.45em; }
 .editor ul[data-check] > li::before {
   content: "";
   position: absolute;
   left: .05em;
-  top: var(--box-top, .22em);
-  width: var(--box, .9em);
-  height: var(--box, .9em);
+  top: calc((1lh - .9em) / 2);
+  width: .9em;
+  height: .9em;
   box-sizing: border-box;
-  border: max(1.5px, calc(var(--box, .9em) * .11)) solid color-mix(in srgb, var(--ui) 55%, transparent);
-  border-radius: calc(var(--box, .9em) * .3);
+  border: max(1.5px, .11em) solid color-mix(in srgb, var(--ui) 55%, transparent);
+  border-radius: .28em;
   cursor: pointer;
   transition: background-color .12s, border-color .12s;
 }
@@ -441,17 +441,6 @@ button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .editor ul[data-check] > li[data-checked="true"]::before {
   border-color: var(--c-hue);
   background: var(--c-hue) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 78% no-repeat;
-}
-.editor ul[data-check] > li[data-checked="true"] {
-  color: color-mix(in srgb, var(--text) 45%, transparent);
-  text-decoration-color: color-mix(in srgb, var(--text) 35%, transparent);
-}
-/* Strike sits at the decorating box's font metrics, so put it on the sized span itself
-   when the item has its own size; otherwise on the item. */
-.editor ul[data-check] > li[data-checked="true"]:not(:has([style*="font-size"], [data-size])),
-.editor ul[data-check] > li[data-checked="true"] :is([style*="font-size"], [data-size]) {
-  text-decoration-line: line-through;
-  text-decoration-color: color-mix(in srgb, var(--text) 35%, transparent);
 }
 :root[data-theme="classic"] .editor ul[data-check] > li[data-checked="true"]::before { background-color: var(--c-ink); border-color: var(--c-ink); }
 
@@ -666,7 +655,7 @@ canvas {
   60% { scale: 1.25; }
   100% { scale: 1; }
 }
-.editor ul[data-check] > li.pop::before { animation: box-pop .38s cubic-bezier(.3, 1.6, .5, 1); }
+.editor ul[data-check] > li.tick-pop::before { animation: box-pop .38s cubic-bezier(.3, 1.6, .5, 1); }
 
 /* particles (confetti, sparkle trail, poof puffs) live in body, never in saved content */
 .fx {
@@ -808,7 +797,7 @@ canvas {
 :root[data-theme="toon"] .dot { display: none; }
 :root[data-theme="toon"] .eyes { display: inline-flex; }
 :root[data-theme="toon"] .title { font-size: 16px; font-weight: 600; letter-spacing: 0; }
-:root[data-theme="toon"] .editor { font-weight: 450; line-height: 1.28; }
+:root[data-theme="toon"] .editor { font-weight: 450; line-height: var(--lh, 1.28); }
 :root[data-theme="toon"] .editor:empty::before { color: rgb(23 23 28 / .45); }
 :root[data-theme="toon"] .editor ::selection { background: rgb(255 255 255 / .75); }
 
@@ -852,11 +841,10 @@ canvas {
 :root[data-theme="toon"] .editor ul[data-check] > li::before {
   border-color: #17171c;
   background-color: #fff;
-  border-width: max(2px, calc(var(--box, .9em) * .12));
+  border-width: max(2px, .12em);
 }
 :root[data-theme="toon"] .editor ul[data-check] > li[data-checked="true"]::before { background-color: #17171c; border-color: #17171c; }
 :root[data-theme="toon"] .editor li::marker { color: #17171c; }
-:root[data-theme="toon"] .editor ul[data-check] > li[data-checked="true"] { color: rgb(23 23 28 / .5); }
 
 :root[data-theme="toon"] .grip { color: #17171c; opacity: .7; }
 
@@ -871,3 +859,39 @@ canvas {
 :root[data-theme="toon"] [data-mode="draw"][data-tool="eraser"] canvas { cursor: url("cursors/eraser.svg") 16 16, cell; }
 
 .tp-toon { background: #FFD84D; box-shadow: inset 0 0 0 2px #17171c, 2px 2px 0 #17171c; }
+
+/* ---------- line spacing + tilt badge ---------- */
+.spacing { display: flex; gap: 2px; }
+.spacing button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  transition: background-color .15s, scale .18s cubic-bezier(.3, 1.8, .5, 1);
+}
+.spacing button:hover { background: var(--pop-soft); }
+.spacing button:active { scale: .84; }
+.spacing button[aria-checked="true"] { background: var(--pop-softer); }
+.spacing svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+:root[data-theme="toon"] .spacing button[aria-checked="true"] { background: var(--c-toon); box-shadow: inset 0 0 0 2px #17171c; }
+.pop-label .hint { text-transform: none; letter-spacing: 0; font-weight: 500; opacity: .8; }
+
+.tilt-badge {
+  position: fixed;
+  left: 50%;
+  top: 6px;
+  z-index: 40;
+  translate: -50% 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--pop-text);
+  color: var(--pop-bg);
+  font: 600 12px/1.4 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: pop .12s ease-out;
+}
+.tilt-badge[hidden] { display: none; }
+:root[data-theme="toon"] .tilt-badge { background: #fff; color: #17171c; box-shadow: 0 0 0 2px #17171c, 2px 2px 0 2px #17171c; }

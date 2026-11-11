@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('sticky', {
   newNote: () => ipcRenderer.send('note:new'),
   resize: (width, height) => ipcRenderer.send('note:resize', width, height),
   move: (x, y) => ipcRenderer.send('note:move', x, y),
+  resizeCentered: (width, height) => ipcRenderer.send('note:resize-centered', width, height),
   setPassthrough: (ignore) => ipcRenderer.send('note:passthrough', ignore),
   onChanged: (cb) => ipcRenderer.on('note:changed', (_e, patch) => cb(patch)),
   onFocus: (cb) => ipcRenderer.on('note:focus', () => cb()),

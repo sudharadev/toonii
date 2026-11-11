@@ -34,7 +34,8 @@ Five styles for all notes: Toon (default: cartoon outlines, googly eyes, custom 
 Select text to get the format toolbar: font size (− 16 +, or type a number), bold, italic,
 underline, strike, bullets, checklist, and **Aa** for font family, text color and clear.
 Type `[] ` at the start of a line for a checklist, `- ` for bullets. Click a box to tick it.
-Tilt a note with the palette button → slider, or right-click → Tilt.
+Rotate a note: hold the mouse button on it and scroll (or Alt + scroll), up to ±15°. Also palette button → Tilt slider, or right-click → Tilt.
+Line spacing: palette button → Line spacing, or **Aa** in the format toolbar.
 
 Closed notes with content can be restored from the tray menu → **Recently closed**.
 

@@ -10,7 +10,7 @@ const isMac = process.platform === 'darwin';
 // Min width leaves room for the floating text-format toolbar.
 const DEFAULT_SIZE = { width: 340, height: 270 };
 const MIN_SIZE = { width: 300, height: 170 };
-const MAX_TILT = 5;
+const MAX_TILT = 15;
 const COLORS = [
   ['yellow', 'Yellow'], ['blue', 'Blue'], ['green', 'Green'],
   ['pink', 'Pink'], ['purple', 'Purple'], ['gray', 'Gray'],
@@ -413,6 +413,12 @@ function sanitize(patch) {
   if (typeof patch.text === 'string') out.text = patch.text.slice(0, 200000);
   if (typeof patch.html === 'string' && patch.html.length <= 1000000) out.html = patch.html;
   if (Number.isFinite(patch.tilt)) out.tilt = clamp(Math.round(patch.tilt * 2) / 2, -MAX_TILT, MAX_TILT);
+  if (patch.fontBase === null || (Number.isFinite(patch.fontBase) && patch.fontBase >= 8 && patch.fontBase <= 96)) {
+    out.fontBase = patch.fontBase;
+  }
+  if (patch.lineHeight === null || (Number.isFinite(patch.lineHeight) && patch.lineHeight >= 0.9 && patch.lineHeight <= 2.5)) {
+    out.lineHeight = patch.lineHeight;
+  }
   if (Array.isArray(patch.strokes)) out.strokes = patch.strokes.slice(0, 5000);
   if (patch.mode === 'type' || patch.mode === 'draw') out.mode = patch.mode;
   if (COLOR_IDS.includes(patch.color)) out.color = patch.color;
@@ -455,6 +461,16 @@ ipcMain.on('note:resize', (event, width, height) => {
     width: Math.max(MIN_SIZE.width, Math.round(width)),
     height: Math.max(MIN_SIZE.height, Math.round(height)),
   });
+});
+
+// Resize around the window's center (used when rotating, so the card stays put).
+ipcMain.on('note:resize-centered', (event, width, height) => {
+  const { win } = noteFor(event);
+  if (!win || !Number.isFinite(width) || !Number.isFinite(height)) return;
+  const b = win.getBounds();
+  const w = Math.max(MIN_SIZE.width, Math.round(width));
+  const h = Math.max(MIN_SIZE.height, Math.round(height));
+  win.setBounds({ x: Math.round(b.x + (b.width - w) / 2), y: Math.round(b.y + (b.height - h) / 2), width: w, height: h });
 });
 
 // Manual window drag (CSS drag regions misbehave on rotated notes).
