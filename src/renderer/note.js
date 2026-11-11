@@ -99,7 +99,44 @@ function flushText() {
   if (textTimer === null) return;
   clearTimeout(textTimer);
   textTimer = null;
-  api.update({ html: editor.innerHTML, text: editorText() });
+  api.update({ html: editorHtml(), text: editorText() });
+}
+
+// Saved HTML without the measured checkbox variables (they are recomputed on load).
+function editorHtml() {
+  const clone = editor.cloneNode(true);
+  for (const li of clone.querySelectorAll('li[style]')) {
+    li.style.removeProperty('--box');
+    li.style.removeProperty('--box-top');
+    if (!li.getAttribute('style')) li.removeAttribute('style');
+  }
+  return clone.innerHTML;
+}
+
+// Size and vertically center each checkbox on its item's first character, so the box
+// follows the text size even when the size lives on an inner span.
+function syncCheckboxes() {
+  for (const li of editor.querySelectorAll('ul[data-check] > li')) {
+    const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.data.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+    });
+    const text = walker.nextNode();
+    let fs = parseFloat(getComputedStyle(li).fontSize);
+    let centerY = null;
+    if (text) {
+      fs = parseFloat(getComputedStyle(text.parentElement).fontSize);
+      const i = text.data.search(/\S/);
+      const r = document.createRange();
+      r.setStart(text, i);
+      r.setEnd(text, i + 1);
+      const rect = r.getBoundingClientRect();
+      centerY = toLocal(rect.left + rect.width / 2, rect.top + rect.height / 2, li)[1];
+    }
+    const box = Math.max(10, Math.round(fs * 0.9 * 10) / 10);
+    li.style.setProperty('--box', `${box}px`);
+    if (centerY === null) li.style.removeProperty('--box-top');
+    else li.style.setProperty('--box-top', `${Math.round((centerY - box / 2) * 10) / 10}px`);
+  }
 }
 
 function scheduleTextSave() {
@@ -151,6 +188,7 @@ function toLocal(clientX, clientY, el) {
   let ox = 0;
   let oy = 0;
   for (let n = el; n && n !== noteEl; n = n.offsetParent) { ox += n.offsetLeft; oy += n.offsetTop; }
+  for (let p = el.parentElement; p && p !== noteEl; p = p.parentElement) { ox -= p.scrollLeft; oy -= p.scrollTop; }
   return [lx - ox, ly - oy];
 }
 
@@ -217,7 +255,11 @@ function setTool(t) {
 // Largest base font size at which the text still fits without scrolling.
 function fitText() {
   fitQueued = false;
-  if (!editor.textContent) { editor.style.setProperty('--base', `${FONT_EMPTY}px`); return; }
+  if (!editor.textContent) {
+    editor.style.setProperty('--base', `${FONT_EMPTY}px`);
+    syncCheckboxes();
+    return;
+  }
   let lo = FONT_MIN;
   let hi = FONT_MAX;
   while (lo < hi) {
@@ -226,6 +268,7 @@ function fitText() {
     if (editor.scrollHeight <= editor.clientHeight) lo = mid; else hi = mid - 1;
   }
   editor.style.setProperty('--base', `${lo}px`);
+  syncCheckboxes();
   if (!format.hidden) positionFormat();
 }
 
@@ -522,8 +565,8 @@ editor.addEventListener('mousedown', (e) => {
   const li = e.target instanceof Element && e.target.closest('ul[data-check] > li');
   if (!li || note.mode !== 'type') return;
   const [lx] = toLocal(e.clientX, e.clientY, li);
-  const box = parseFloat(getComputedStyle(li).fontSize) * 1.25;
-  if (lx > box) return;
+  const box = parseFloat(li.style.getPropertyValue('--box')) || parseFloat(getComputedStyle(li).fontSize) * 0.9;
+  if (lx > box * 1.5) return;
   e.preventDefault();
   li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true';
   contentChanged();

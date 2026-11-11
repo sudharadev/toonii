@@ -417,17 +417,19 @@ button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 
 /* Checklists */
 .editor ul[data-check] { list-style: none; padding-left: 0; }
-.editor ul[data-check] > li { position: relative; padding-left: 1.45em; }
+/* --box / --box-top are measured per item by note.js from the item's first character,
+   so the checkbox tracks the text size even when the size is set on an inner span. */
+.editor ul[data-check] > li { position: relative; padding-left: calc(var(--box, .9em) * 1.6); }
 .editor ul[data-check] > li::before {
   content: "";
   position: absolute;
   left: .05em;
-  top: .22em;
-  width: .9em;
-  height: .9em;
+  top: var(--box-top, .22em);
+  width: var(--box, .9em);
+  height: var(--box, .9em);
   box-sizing: border-box;
-  border: max(1.5px, .1em) solid color-mix(in srgb, var(--ui) 55%, transparent);
-  border-radius: .28em;
+  border: max(1.5px, calc(var(--box, .9em) * .11)) solid color-mix(in srgb, var(--ui) 55%, transparent);
+  border-radius: calc(var(--box, .9em) * .3);
   cursor: pointer;
   transition: background-color .12s, border-color .12s;
 }
@@ -438,7 +440,13 @@ button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 }
 .editor ul[data-check] > li[data-checked="true"] {
   color: color-mix(in srgb, var(--text) 45%, transparent);
-  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text) 35%, transparent);
+}
+/* Strike sits at the decorating box's font metrics, so put it on the sized span itself
+   when the item has its own size; otherwise on the item. */
+.editor ul[data-check] > li[data-checked="true"]:not(:has([style*="font-size"], [data-size])),
+.editor ul[data-check] > li[data-checked="true"] :is([style*="font-size"], [data-size]) {
+  text-decoration-line: line-through;
   text-decoration-color: color-mix(in srgb, var(--text) 35%, transparent);
 }
 :root[data-theme="classic"] .editor ul[data-check] > li[data-checked="true"]::before { background-color: var(--c-ink); border-color: var(--c-ink); }
