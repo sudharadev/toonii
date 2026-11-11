@@ -711,11 +711,26 @@ function setBar(open) {
 }
 function hideFormat() { setBar(false); }
 
+// The bar shows only when the user asks for it: a click in the text, or a selection.
+// Focus that arrives on its own (new note, window focus, tray) keeps the note clean.
+let barArmed = false;
+const hasTextSelection = () => {
+  const sel = window.getSelection();
+  return !!sel.rangeCount && !sel.isCollapsed && editor.contains(sel.anchorNode);
+};
+
 function updateBar() {
   const active = document.activeElement;
+  const editing = active === editor || format.contains(active);
+  if (!editing) barArmed = false;
   setBar(!!note && note.mode === 'type' && document.hasFocus() && !closing
-    && (active === editor || format.contains(active)));
+    && editing && (barArmed || hasTextSelection() || format.contains(active)));
 }
+editor.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  barArmed = true;
+  setTimeout(updateBar, 0);
+});
 document.addEventListener('focusin', () => setTimeout(updateBar, 0));
 document.addEventListener('focusout', () => setTimeout(updateBar, 0));
 window.addEventListener('focus', () => setTimeout(updateBar, 0));
@@ -724,6 +739,7 @@ document.addEventListener('selectionchange', () => {
   if (!note || note.mode !== 'type' || document.activeElement !== editor) return;
   const sel = window.getSelection();
   if (sel.rangeCount && editor.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+  if (!barOpen && hasTextSelection()) updateBar(); // keyboard selection (Shift+arrows, Ctrl+A)
   if (barOpen) refreshFormatState();
 });
 
@@ -1094,6 +1110,7 @@ document.addEventListener('mousemove', (e) => {
 window.addEventListener('focus', () => document.body.classList.add('focused'));
 window.addEventListener('blur', () => {
   document.body.classList.remove('focused');
+  barArmed = false;
   flushText();
   toggleStylePop(false);
   hideFormat();
