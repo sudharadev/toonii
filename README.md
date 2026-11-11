@@ -9,7 +9,8 @@ Type, draw, tick things off. The eyes follow your mouse around.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-FFD84D?style=flat-square&labelColor=17171c)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-6CC8FF?style=flat-square&labelColor=17171c)
-![Electron](https://img.shields.io/badge/electron-45-7DE38D?style=flat-square&labelColor=17171c)
+![Tauri](https://img.shields.io/badge/tauri-2-7DE38D?style=flat-square&labelColor=17171c)
+![Size](https://img.shields.io/badge/installer-1.3%20MB-B79CFF?style=flat-square&labelColor=17171c)
 ![License](https://img.shields.io/badge/license-MIT-FF8FAB?style=flat-square&labelColor=17171c)
 
 [**Download**](../../releases/latest) · [Features](#features) · [Shortcuts](#keyboard-shortcuts) · [Build from source](#build-from-source)
@@ -38,6 +39,8 @@ Type, draw, tick things off. The eyes follow your mouse around.
   brought back from the tray menu → **Recently closed**.
 - **Private by design.** No account, no cloud, no network calls. Notes are a single
   JSON file on your computer.
+- **Tiny.** A 1.3 MB installer and a 3.6 MB app, built with [Tauri](https://tauri.app) on
+  the Edge WebView2 engine that ships with Windows.
 
 ## Download
 
@@ -45,14 +48,17 @@ Get the latest Windows build from [**Releases**](../../releases/latest):
 
 | File | What it is |
 |---|---|
-| `Toonii-Setup-1.0.0.exe` | Installer. Per-user, no admin rights needed, adds a Start menu shortcut. |
-| `Toonii-1.0.0-portable.exe` | Single file. Runs from anywhere without installing. |
+| `Toonii-Setup-1.0.0.exe` (1.3 MB) | Installer. Per-user, no admin rights needed, adds a Start menu shortcut. |
+| `Toonii-1.0.0-portable.exe` (3.6 MB) | Single file. Runs from anywhere without installing. |
+
+Toonii uses Microsoft Edge WebView2, which is built into Windows 10 and 11. On the rare PC
+without it, the installer fetches it automatically.
 
 > [!NOTE]
 > The builds are not code-signed yet, so Windows SmartScreen may warn on first launch.
 > Click **More info → Run anyway**.
 
-macOS builds come from the same code (`npm run dist:mac` on a Mac).
+macOS builds come from the same code (`npm run build` on a Mac).
 
 ## Using Toonii
 
@@ -96,27 +102,24 @@ copy it to another machine to move your notes. Notes from the app's old name
 
 ## Build from source
 
-Needs [Node.js](https://nodejs.org) 20 or newer.
+Needs [Node.js](https://nodejs.org) 20+, [Rust](https://rustup.rs) (stable) and, on Windows,
+the Visual Studio C++ Build Tools. See [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```sh
 git clone <this repo>
 cd toonii
 npm install
-npm start            # run the app
+npm start            # run the app (debug build)
 ```
 
 Package it:
 
 ```sh
-npm run dist:win     # installer + portable .exe in dist/  (run on Windows)
-npm run dist:mac     # .dmg in dist/                       (run on a Mac)
+npm run build        # src-tauri/target/release/toonii.exe + bundle/nsis/*-setup.exe
 npm run icons        # regenerate the app and tray icons in assets/
 ```
 
-> [!TIP]
-> Build outside OneDrive or Dropbox, or send the output elsewhere with
-> `npx electron-builder --win -c.directories.output=C:/builds`. Sync clients lock the
-> fresh `.exe` and the build fails with `EBUSY`.
+Set `TOONII_DATA_DIR` to run against a throwaway notes folder while testing.
 
 **Releases:** pushing a tag like `v1.0.0` runs [`release.yml`](.github/workflows/release.yml),
 which builds on Windows and attaches both `.exe` files to a GitHub release.
@@ -124,22 +127,22 @@ which builds on Windows and attaches both `.exe` files to a GitHub release.
 ## Project layout
 
 ```
-src/
-  main.js              windows, tray, global shortcuts, right-click menu, IPC
-  store.js             notes.json persistence (debounced, atomic writes)
-  preload.js           safe bridge between a note page and the main process
-  menu-preload.js      bridge for the right-click menu window
-  renderer/
-    note.html|css|js   the note: editor, auto-fit text, drawing canvas, customize panel
-    menu.html|css|js   the Toon-styled right-click menu
-    cursors/           cartoon cursors
-    fonts/             Fredoka (SIL OFL)
+src-tauri/
+  src/main.rs          windows, stage, tray, global shortcuts, right-click menu, commands
+  src/store.rs         notes.json persistence (debounced, atomic writes)
+  tauri.conf.json      app, bundle and security config
+src/renderer/
+  bridge.js            the pages' small API onto the Rust commands and events
+  note.html|css|js     the note: editor, auto-fit text, drawing canvas, customize panel
+  menu.html|css|js     the Toon-styled right-click menu
+  cursors/             cartoon cursors
+  fonts/               Fredoka (SIL OFL)
 scripts/make-icons.js  draws the icons as PNG/ICO with no dependencies
 docs/UX-RESEARCH.md    research and design decisions
 ```
 
-Notes run with `contextIsolation` and `sandbox` on, a strict Content Security Policy,
-and paste as plain text, so nothing remote ever loads inside a note.
+Pages load only bundled files under a strict Content Security Policy, and paste lands as
+plain text, so nothing remote ever loads inside a note.
 
 ## License
 

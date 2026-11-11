@@ -16,11 +16,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: npm ci
-      - run: npx electron-builder --win --publish never
+      - run: npx tauri build
+      - name: Name the release files
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "src-tauri/target/release/bundle/nsis/Toonii_${v}_x64-setup.exe" "dist/Toonii-Setup-$v.exe"
+          Copy-Item "src-tauri/target/release/toonii.exe" "dist/Toonii-$v-portable.exe"
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.exe
-            dist/*.blockmap
+          files: dist/*.exe
           generate_release_notes: true
