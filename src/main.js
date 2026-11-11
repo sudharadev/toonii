@@ -301,62 +301,152 @@ function toggleAll() {
 
 // ---------- menus ----------
 
-function noteMenuItems(win) {
+// The right-click menu is a small Toon-styled window (renderer/menu.html) instead of the
+// native OS menu. Main builds the items and keeps the actions; the page only renders.
+const TOON_COLORS = {
+  yellow: '#FFD84D', blue: '#6CC8FF', green: '#7DE38D', pink: '#FF8FAB', purple: '#B79CFF', gray: '#D6D6E0',
+};
+const TILTS = [['Left', -3], ['Straight', 0], ['Right', 3]];
+const MENU_PAD = 10; // transparent room around the card for its shadow; mirrors --pad in menu.css
+let menuWin = null;
+let menuState = null; // { owner, actions, at }
+
+function ensureMenuWindow() {
+  if (menuWin && !menuWin.isDestroyed()) return menuWin;
+  menuWin = new BrowserWindow({
+    width: 260,
+    height: 320,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'menu-preload.js'),
+      contextIsolation: true,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+  menuWin.setAlwaysOnTop(true, 'pop-up-menu');
+  menuWin.loadFile(path.join(__dirname, 'renderer', 'menu.html'));
+  menuWin.webContents.on('will-navigate', (e) => e.preventDefault());
+  menuWin.on('blur', hideMenu);
+  menuWin.on('closed', () => { menuWin = null; menuState = null; });
+  return menuWin;
+}
+
+function hideMenu() {
+  menuState = null;
+  if (menuWin && !menuWin.isDestroyed() && menuWin.isVisible()) menuWin.hide();
+}
+
+function noteMenu(win, params) {
   const note = store.get(win.noteId);
-  if (!note) return [];
-  return [
+  if (!note) return null;
+  const mod = isMac ? '⌘' : 'Ctrl+';
+  const items = [];
+  const actions = {};
+  const add = (item, fn) => { items.push(item); if (fn) actions[item.id] = fn; };
+  // Edit commands run in the note, so give it focus back first.
+  const edit = (cmd) => () => { win.focus(); win.webContents[cmd](); };
+
+  if (params.misspelledWord) {
+    const suggestions = params.dictionarySuggestions.slice(0, 5);
+    if (!suggestions.length) add({ id: 'nospell', label: 'No suggestions', icon: 'spell', enabled: false });
+    suggestions.forEach((word, i) => add(
+      { id: `spell${i}`, label: word, icon: 'spell', suggest: true },
+      () => { win.focus(); win.webContents.replaceMisspelling(word); },
+    ));
+    add({ type: 'separator' });
+  }
+  if (params.isEditable) {
+    const f = params.editFlags;
+    add({ id: 'cut', label: 'Cut', icon: 'cut', hint: `${mod}X`, enabled: f.canCut }, edit('cut'));
+    add({ id: 'copy', label: 'Copy', icon: 'copy', hint: `${mod}C`, enabled: f.canCopy }, edit('copy'));
+    add({ id: 'paste', label: 'Paste', icon: 'paste', hint: `${mod}V`, enabled: f.canPaste }, edit('paste'));
+    add({ id: 'selectAll', label: 'Select all', icon: 'select', hint: `${mod}A` }, edit('selectAll'));
+    add({ type: 'separator' });
+  } else if (params.selectionText) {
+    add({ id: 'copy', label: 'Copy', icon: 'copy', hint: `${mod}C` }, edit('copy'));
+    add({ type: 'separator' });
+  }
+
+  add(
     {
-      label: 'Color',
-      submenu: COLORS.map(([id, label]) => ({
-        label, type: 'radio', checked: note.color === id,
-        click: () => setNoteProps(note.id, { color: id }),
-      })),
+      id: 'color', type: 'swatches', label: 'Color', value: note.color,
+      options: COLORS.map(([id, label]) => ({ value: id, label, color: TOON_COLORS[id] })),
     },
+    (color) => { if (COLOR_IDS.includes(color)) setNoteProps(note.id, { color }); },
+  );
+  add(
     {
-      label: 'Tilt',
-      submenu: [['Left', -3], ['Straight', 0], ['Right', 3]].map(([label, tilt]) => ({
-        label, type: 'radio', checked: note.tilt === tilt,
-        click: () => setNoteProps(note.id, { tilt }),
-      })),
+      id: 'tilt', type: 'segments', label: 'Tilt', value: note.tilt,
+      options: TILTS.map(([label, value]) => ({ value, label })),
     },
-    {
-      label: 'Keep on top', type: 'checkbox', checked: note.pinned,
-      click: () => setNoteProps(note.id, { pinned: !note.pinned }),
-    },
-    {
-      label: 'Clear drawing', enabled: note.strokes.length > 0,
-      click: () => setNoteProps(note.id, { strokes: [] }),
-    },
-    { type: 'separator' },
-    { label: 'New note', click: () => createNote({ near: win }) },
-    { label: 'Close note', click: () => closeNote(note.id) },
-  ];
+    (tilt) => { if (TILTS.some(([, v]) => v === tilt)) setNoteProps(note.id, { tilt }); },
+  );
+  add({ type: 'separator' });
+  add(
+    { id: 'pin', label: 'Keep on top', icon: 'pin', toggle: true, checked: note.pinned },
+    () => setNoteProps(note.id, { pinned: !store.get(note.id).pinned }),
+  );
+  add(
+    { id: 'clearInk', label: 'Clear drawing', icon: 'trash', enabled: note.strokes.length > 0 },
+    () => setNoteProps(note.id, { strokes: [] }),
+  );
+  add({ type: 'separator' });
+  add({ id: 'new', label: 'New note', icon: 'plus', hint: `${mod}N` }, () => createNote({ near: win }));
+  add({ id: 'close', label: 'Close note', icon: 'x', hint: `${mod}W`, danger: true }, () => closeNote(note.id));
+  return { items, actions, accent: TOON_COLORS[note.color] };
 }
 
 function showContextMenu(win, params) {
-  const items = [];
-  if (params.misspelledWord) {
-    const suggestions = params.dictionarySuggestions.slice(0, 5);
-    if (suggestions.length === 0) items.push({ label: 'No suggestions', enabled: false });
-    for (const s of suggestions) {
-      items.push({ label: s, click: () => win.webContents.replaceMisspelling(s) });
-    }
-    items.push({ type: 'separator' });
-  }
-  if (params.isEditable) {
-    items.push(
-      { role: 'cut', enabled: params.editFlags.canCut },
-      { role: 'copy', enabled: params.editFlags.canCopy },
-      { role: 'paste', enabled: params.editFlags.canPaste },
-      { role: 'selectAll' },
-      { type: 'separator' },
-    );
-  } else if (params.selectionText) {
-    items.push({ role: 'copy' }, { type: 'separator' });
-  }
-  items.push(...noteMenuItems(win));
-  Menu.buildFromTemplate(items).popup({ window: win });
+  const menu = noteMenu(win, params);
+  if (!menu) return;
+  const mw = ensureMenuWindow();
+  menuState = { owner: win, actions: menu.actions, at: screen.getCursorScreenPoint() };
+  const send = () => mw.webContents.send('menu:show', { items: menu.items, accent: menu.accent });
+  if (mw.webContents.isLoading()) mw.webContents.once('did-finish-load', send); else send();
 }
+
+// The page measured itself: place the window at the cursor, flipped to stay on screen.
+ipcMain.on('menu:ready', (event, width, height) => {
+  if (!menuState || !menuWin || event.sender !== menuWin.webContents) return;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+  const w = Math.round(width) + MENU_PAD * 2;
+  const h = Math.round(height) + MENU_PAD * 2;
+  const { at } = menuState;
+  const area = screen.getDisplayNearestPoint(at).workArea;
+  let x = at.x - MENU_PAD;
+  let y = at.y - MENU_PAD;
+  if (x + w > area.x + area.width) x = at.x - w + MENU_PAD;
+  if (y + h > area.y + area.height) y = at.y - h + MENU_PAD;
+  x = clamp(x, area.x - MENU_PAD, area.x + area.width - w + MENU_PAD);
+  y = clamp(y, area.y - MENU_PAD, area.y + area.height - h + MENU_PAD);
+  menuWin.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h });
+  menuWin.show();
+  menuWin.focus();
+});
+
+ipcMain.on('menu:pick', (event, id, value) => {
+  if (!menuState || !menuWin || event.sender !== menuWin.webContents) return;
+  const { owner, actions } = menuState;
+  const fn = Object.prototype.hasOwnProperty.call(actions, id) ? actions[id] : null;
+  hideMenu();
+  if (!fn || owner.isDestroyed()) return;
+  fn(value);
+});
+
+ipcMain.on('menu:close', (event) => {
+  if (menuWin && event.sender === menuWin.webContents) hideMenu();
+});
 
 function describe(note) {
   const snippet = note.text.trim().replace(/\s+/g, ' ');

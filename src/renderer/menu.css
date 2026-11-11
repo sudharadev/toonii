@@ -1,0 +1,142 @@
+/* Toon right-click menu: white card, thick ink outline, hard offset shadow. */
+@font-face {
+  font-family: "Fredoka";
+  src: url("fonts/fredoka.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: block;
+}
+
+:root {
+  --ink: #17171c;
+  --hover: #FFD84D; /* replaced by the note's color on show */
+  --danger: #FF8FAB;
+  --pad: 10px; /* transparent room in the window for the shadow; mirrors MENU_PAD in main.js */
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: "Fredoka", "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
+  color: var(--ink);
+  cursor: url("cursors/arrow.svg") 4 3, default;
+}
+button { font: inherit; color: inherit; border: 0; background: none; margin: 0; padding: 0; cursor: url("cursors/point.svg") 11 3, pointer; }
+button:disabled { cursor: url("cursors/arrow.svg") 4 3, default; }
+
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.menu {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  display: grid;
+  gap: 2px;
+  min-width: 212px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 0 0 2.5px var(--ink), 4px 4px 0 2.5px var(--ink);
+  font-size: 13px;
+  transform-origin: var(--origin, top left);
+}
+.menu.show { animation: menu-in .18s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes menu-in { from { opacity: 0; transform: scale(.88) rotate(-1.5deg); } }
+@media (prefers-reduced-motion: reduce) { .menu.show { animation: none; } }
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  text-align: left;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.item .label { flex: 1; }
+.item .hint { font-size: 11.5px; font-weight: 500; opacity: .5; font-variant-numeric: tabular-nums; }
+.item:not(:disabled):hover,
+.item:not(:disabled).focus { background: var(--hover); box-shadow: inset 0 0 0 2px var(--ink); }
+.item:not(:disabled):active { scale: .97; }
+.item:disabled { opacity: .38; }
+.item.danger:not(:disabled):hover,
+.item.danger:not(:disabled).focus { background: var(--danger); }
+.item.suggest .label { font-weight: 600; }
+.item.on .i { fill: currentColor; } /* filled pin = pinned */
+.item .check {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--ink);
+  position: relative;
+}
+.item .check::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink);
+  transition: translate .16s cubic-bezier(.3, 1.5, .5, 1);
+}
+.item.on .check { background: var(--hover); }
+.item.on .check::after { translate: 12px 0; }
+
+.sep { height: 2px; margin: 4px 6px; border-radius: 2px; background: rgb(23 23 28 / .18); }
+
+.group { display: grid; gap: 6px; padding: 6px 10px 8px; }
+.group h4 {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  opacity: .55;
+}
+
+.swatches { display: flex; gap: 7px; }
+.swatches button {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 2px var(--ink);
+  transition: scale .12s;
+}
+.swatches button:hover { scale: 1.15; }
+.swatches button[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 2px #fff, 0 0 0 4px var(--ink); }
+
+.segments {
+  display: flex;
+  padding: 2px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.segments button {
+  flex: 1;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.segments button:hover { background: rgb(23 23 28 / .07); }
+.segments button[aria-checked="true"] { background: var(--ink); color: #fff; }
