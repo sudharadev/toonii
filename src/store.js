@@ -22,6 +22,8 @@ function normalize(n) {
     tilt: Number.isFinite(n.tilt) ? n.tilt : 0,
     fontBase: Number.isFinite(n.fontBase) ? n.fontBase : null, // frozen text size once sized by hand
     lineHeight: Number.isFinite(n.lineHeight) ? n.lineHeight : null, // null = style default
+    font: typeof n.font === 'string' ? n.font : null, // note-wide font; null = style default
+    fontPinned: !!n.fontPinned, // true = user picked fontBase in the panel (auto-fit off)
     strokes: Array.isArray(n.strokes) ? n.strokes : [],
     pinned: !!n.pinned,
     bounds: n.bounds || null,

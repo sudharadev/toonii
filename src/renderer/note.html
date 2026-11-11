@@ -28,6 +28,7 @@
       <symbol id="i-smaller" viewBox="0 0 24 24"><path d="M3 18 8.5 5 14 18M5 14h7M16 12h6"/></symbol>
       <symbol id="i-larger" viewBox="0 0 24 24"><path d="M3 18 8.5 5 14 18M5 14h7M16 12h6M19 9v6"/></symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01"/></symbol>
       <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
       <symbol id="i-checklist" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></symbol>
@@ -40,7 +41,7 @@
       <span class="eyes" id="eyes" aria-hidden="true"><i class="eye"><b></b></i><i class="eye"><b></b></i></span>
       <input class="title" id="title" spellcheck="false" maxlength="80" aria-label="Note title">
       <div class="tools">
-        <button class="icon on-hover" id="styleBtn" title="Color & tilt" aria-label="Color and tilt"><svg class="i"><use href="#i-palette"/></svg></button>
+        <button class="icon on-hover" id="styleBtn" title="Customize (Ctrl+E)" aria-label="Customize" aria-expanded="false"><svg class="i"><use href="#i-palette"/></svg></button>
         <button class="icon on-hover" id="pinBtn" title="Keep on top" aria-label="Keep on top" aria-pressed="false"><svg class="i"><use href="#i-pin"/></svg></button>
         <button class="chip" id="modeBtn">
           <span id="modeLabel">Draw</span>
@@ -50,39 +51,6 @@
         <button class="icon" id="closeBtn" title="Close note (Ctrl+W)" aria-label="Close note"><svg class="i"><use href="#i-x"/></svg></button>
       </div>
     </header>
-
-    <div class="pop style-pop" id="stylePop" hidden>
-      <div class="pop-label">Style · all notes</div>
-      <div class="themes" id="themes" role="radiogroup" aria-label="Style for all notes">
-        <button data-theme-id="toon" role="radio"><i class="tp tp-toon"></i>Toon</button>
-        <button data-theme-id="aura" role="radio"><i class="tp tp-aura"></i>Aura</button>
-        <button data-theme-id="minimal" role="radio"><i class="tp tp-minimal"></i>Minimal</button>
-        <button data-theme-id="midnight" role="radio"><i class="tp tp-midnight"></i>Midnight</button>
-        <button data-theme-id="classic" role="radio"><i class="tp tp-classic"></i>Classic</button>
-      </div>
-      <div class="pop-label">Color</div>
-      <div class="swatches" role="radiogroup" aria-label="Color">
-        <button data-color="yellow" title="Yellow" role="radio"></button>
-        <button data-color="blue" title="Blue" role="radio"></button>
-        <button data-color="green" title="Green" role="radio"></button>
-        <button data-color="pink" title="Pink" role="radio"></button>
-        <button data-color="purple" title="Purple" role="radio"></button>
-        <button data-color="gray" title="Gray" role="radio"></button>
-      </div>
-      <div class="pop-label">Line spacing</div>
-      <div class="spacing" role="radiogroup" aria-label="Line spacing">
-        <button data-lh="1.05" title="Tight" role="radio"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16"/></svg></button>
-        <button data-lh="" title="Normal" role="radio"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-        <button data-lh="1.55" title="Relaxed" role="radio"><svg viewBox="0 0 24 24"><path d="M4 5.5h16M4 12h16M4 18.5h16"/></svg></button>
-        <button data-lh="1.9" title="Loose" role="radio"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 12h16M4 20h16"/></svg></button>
-      </div>
-      <div class="pop-label">Tilt <span class="hint">· or hold the top bar and scroll</span></div>
-      <div class="tilt-row">
-        <svg class="i"><use href="#i-rotate"/></svg>
-        <input type="range" id="tilt" min="-15" max="15" step="1" value="0" aria-label="Tilt">
-        <button class="icon sm" id="tiltReset" title="Straighten">0°</button>
-      </div>
-    </div>
 
     <main class="body" id="body">
       <div class="editor" id="editor" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" data-placeholder="Type something…"></div>
@@ -101,9 +69,81 @@
     </div>
   </div>
 
+  <!-- Customize panel: docks beside the note (outside it), so the note stays fully visible
+       while you try things. Hovering an option previews it live; clicking keeps it. -->
+  <aside class="panel" id="stylePop" aria-label="Customize note" hidden>
+    <header class="panel-head">
+      <strong>Customize</strong>
+      <button class="icon" id="shuffleBtn" title="Surprise me"><svg class="i"><use href="#i-dice"/></svg></button>
+      <button class="icon" id="resetLookBtn" title="Reset this note's look"><svg class="i"><use href="#i-undo"/></svg></button>
+      <button class="icon" id="panelClose" title="Close (Esc)"><svg class="i"><use href="#i-x"/></svg></button>
+    </header>
+
+    <section>
+      <h3>Style <span class="hint">all notes</span></h3>
+      <div class="themes" id="themes" role="radiogroup" aria-label="Style for all notes">
+        <button data-theme-id="toon" role="radio"><i class="tp tp-toon"></i><span>Toon</span></button>
+        <button data-theme-id="aura" role="radio"><i class="tp tp-aura"></i><span>Aura</span></button>
+        <button data-theme-id="minimal" role="radio"><i class="tp tp-minimal"></i><span>Minimal</span></button>
+        <button data-theme-id="midnight" role="radio"><i class="tp tp-midnight"></i><span>Midnight</span></button>
+        <button data-theme-id="classic" role="radio"><i class="tp tp-classic"></i><span>Classic</span></button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Color</h3>
+      <div class="swatches" id="swatches" role="radiogroup" aria-label="Color">
+        <button data-color="yellow" title="Yellow" role="radio"></button>
+        <button data-color="blue" title="Blue" role="radio"></button>
+        <button data-color="green" title="Green" role="radio"></button>
+        <button data-color="pink" title="Pink" role="radio"></button>
+        <button data-color="purple" title="Purple" role="radio"></button>
+        <button data-color="gray" title="Gray" role="radio"></button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Font</h3>
+      <div class="note-fonts" id="noteFonts" role="radiogroup" aria-label="Note font">
+        <button data-note-font="sans" role="radio"><b>Aa</b><span>Sans</span></button>
+        <button data-note-font="serif" role="radio"><b>Aa</b><span>Serif</span></button>
+        <button data-note-font="mono" role="radio"><b>Aa</b><span>Mono</span></button>
+        <button data-note-font="hand" role="radio"><b>Aa</b><span>Hand</span></button>
+        <button data-note-font="marker" role="radio"><b>Aa</b><span>Marker</span></button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Text size <output id="baseValue"></output></h3>
+      <div class="slider-row">
+        <button class="pill" id="autoFitBtn" aria-pressed="true" title="Text grows and shrinks to fill the note">Auto</button>
+        <input type="range" id="baseSize" min="10" max="48" step="1" value="18" aria-label="Text size">
+      </div>
+    </section>
+
+    <section>
+      <h3>Line spacing</h3>
+      <div class="spacing" role="radiogroup" aria-label="Line spacing">
+        <button data-lh="1.05" title="Tight" role="radio"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16"/></svg></button>
+        <button data-lh="" title="Normal" role="radio"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button data-lh="1.55" title="Relaxed" role="radio"><svg viewBox="0 0 24 24"><path d="M4 5.5h16M4 12h16M4 18.5h16"/></svg></button>
+        <button data-lh="1.9" title="Loose" role="radio"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 12h16M4 20h16"/></svg></button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Tilt <output id="tiltValue">0°</output></h3>
+      <div class="slider-row">
+        <button class="pill" id="tiltReset" title="Straighten">0°</button>
+        <input type="range" id="tilt" min="-15" max="15" step="1" value="0" aria-label="Tilt">
+      </div>
+      <p class="tip">Tip: hold the mouse on a note and scroll to rotate it.</p>
+    </section>
+  </aside>
+
   <div class="tilt-badge" id="tiltBadge" hidden>0°</div>
 
-  <!-- Floating format toolbar: outside .note so it never rotates. -->
+  <!-- Format bar: docks under the note while typing, so it never covers the text. -->
   <div class="format" id="format" role="toolbar" aria-label="Text formatting" hidden>
     <div class="row">
       <div class="stepper" title="Font size">
@@ -129,12 +169,6 @@
         <button data-font="mono">Mono</button>
         <button data-font="hand">Hand</button>
         <button data-font="marker">Marker</button>
-      </div>
-      <div class="spacing" role="radiogroup" aria-label="Line spacing">
-        <button data-lh="1.05" title="Tight spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 12h16M4 16h16"/></svg></button>
-        <button data-lh="" title="Normal spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-        <button data-lh="1.55" title="Relaxed spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 5.5h16M4 12h16M4 18.5h16"/></svg></button>
-        <button data-lh="1.9" title="Loose spacing" role="radio"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 12h16M4 20h16"/></svg></button>
       </div>
       <div class="colors">
         <button data-tc="" title="Default color"></button>

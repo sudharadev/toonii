@@ -20,6 +20,9 @@ const moreBtn = $('moreBtn');
 const sizeInput = $('sizeInput');
 
 const GUTTER = 16;
+// Invisible window space around the card that holds the customize panel and format bar.
+let stage = { top: 0, right: 0, bottom: 0, left: 0 };
+let noteBox = null; // the card's (rotated) bounding box in window coordinates
 const FONT_MAX = 36;
 const FONT_MIN = 14;
 const FONT_EMPTY = 18;
@@ -145,8 +148,8 @@ function contentChanged() {
 // ---------- layout: fit (possibly rotated) note inside the window ----------
 
 function layout() {
-  const W = window.innerWidth - GUTTER * 2;
-  const H = window.innerHeight - GUTTER * 2;
+  const W = window.innerWidth - stage.left - stage.right - GUTTER * 2;
+  const H = window.innerHeight - stage.top - stage.bottom - GUTTER * 2;
   const t = Math.abs((note ? note.tilt : 0) * Math.PI / 180);
   const c = Math.cos(t);
   const s = Math.sin(t);
@@ -158,12 +161,19 @@ function layout() {
   h = Math.max(110, Math.min(H, h));
   Object.assign(noteEl.style, {
     inset: 'auto',
-    left: `${GUTTER + (W - w) / 2}px`,
-    top: `${GUTTER + (H - h) / 2}px`,
+    left: `${stage.left + GUTTER + (W - w) / 2}px`,
+    top: `${stage.top + GUTTER + (H - h) / 2}px`,
     width: `${w}px`,
     height: `${h}px`,
   });
   noteEl.style.setProperty('--tilt', `${note ? note.tilt : 0}deg`);
+  // Computed, not measured: getBoundingClientRect would be mid-animation while tilting.
+  const bw = w * c + h * s;
+  const bh = w * s + h * c;
+  const cx = stage.left + GUTTER + W / 2;
+  const cy = stage.top + GUTTER + H / 2;
+  noteBox = { left: cx - bw / 2, right: cx + bw / 2, top: cy - bh / 2, bottom: cy + bh / 2, width: bw, height: bh };
+  placeFloating();
 }
 
 // Client point -> point in the note's own (unrotated) coordinate space, relative to `el`.
@@ -194,7 +204,9 @@ function applyColor() {
   queueRedraw(); // ink follows the note color
 }
 
+let themeNow = 'toon';
 function applyTheme(theme) {
+  themeNow = theme;
   document.documentElement.dataset.theme = theme;
   for (const b of $('themes').querySelectorAll('[data-theme-id]')) {
     b.setAttribute('aria-checked', String(b.dataset.themeId === theme));
@@ -220,7 +232,7 @@ function applyPinned() {
 
 function applyTilt() {
   tiltInput.value = String(note.tilt);
-  $('tiltReset').textContent = `${note.tilt > 0 ? '+' : ''}${note.tilt}°`;
+  $('tiltValue').textContent = `${note.tilt > 0 ? '+' : ''}${note.tilt}°`;
   layout();
   sizeCanvas();
   queueFit();
@@ -248,6 +260,13 @@ const hasManualSizes = () => !!editor.querySelector('[style*="font-size"]:not(li
 
 function fitText() {
   fitQueued = false;
+  // A size picked in the customize panel wins over everything.
+  if (note.fontPinned && note.fontBase) {
+    editor.style.setProperty('--base', `${note.fontBase}px`);
+    syncCheckboxes();
+    updateBaseUi();
+    return;
+  }
   // Once the user sizes text themselves, auto-fit stops: otherwise sizing one line would
   // make every other line jump. The base is frozen at the last auto value (note.fontBase).
   if (hasManualSizes()) {
@@ -257,7 +276,7 @@ function fitText() {
     }
     editor.style.setProperty('--base', `${note.fontBase}px`);
     syncCheckboxes();
-    if (!format.hidden) positionFormat();
+    updateBaseUi();
     return;
   }
   if (note.fontBase) {
@@ -267,6 +286,7 @@ function fitText() {
   if (!editor.textContent) {
     editor.style.setProperty('--base', `${FONT_EMPTY}px`);
     syncCheckboxes();
+    updateBaseUi();
     return;
   }
   let lo = FONT_MIN;
@@ -278,7 +298,7 @@ function fitText() {
   }
   editor.style.setProperty('--base', `${lo}px`);
   syncCheckboxes();
-  if (!format.hidden) positionFormat();
+  updateBaseUi();
 }
 
 function queueFit() {
@@ -437,9 +457,47 @@ function currentAttr(name, fallback) {
 // Wrap the selection in a <span> and let `decorate` style it; `clean` strips the same
 // property from nested elements so the new value wins. Uses execCommand's <font> output as
 // a marker so the browser handles splitting across elements, then swaps <font> for spans.
-function wrapSelection(decorate, clean) {
+// The line (list item / paragraph) the caret is in, so the bar works without selecting.
+function lineRange() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !editor.contains(sel.anchorNode)) return null;
+  let node = sel.anchorNode;
+  if (node === editor) {
+    node = editor.childNodes[Math.min(sel.anchorOffset, editor.childNodes.length - 1)];
+    if (!node) return null;
+  }
+  const isBlock = (x) => x.nodeType === Node.ELEMENT_NODE && /^(DIV|P|LI|UL|OL)$/.test(x.tagName);
+  while (node.parentNode !== editor && !isBlock(node)) node = node.parentNode;
+  const range = document.createRange();
+  if (isBlock(node)) {
+    if (node.tagName === 'UL' || node.tagName === 'OL') return null;
+    range.selectNodeContents(node);
+  } else {
+    // loose text directly in the editor: take the run of inline nodes around the caret
+    let a = node;
+    let b = node;
+    const stop = (x) => isBlock(x) || x.nodeName === 'BR';
+    while (a.previousSibling && !stop(a.previousSibling)) a = a.previousSibling;
+    while (b.nextSibling && !stop(b.nextSibling)) b = b.nextSibling;
+    range.setStartBefore(a);
+    range.setEndAfter(b);
+  }
+  return range.toString().trim() ? range : null;
+}
+
+// With only a caret, target the whole current line. Returns false if there is nothing to act on.
+function selectTarget() {
   restoreSelection();
-  if (!selectionInEditor()) return;
+  if (selectionInEditor()) return 'selection';
+  const line = lineRange();
+  if (!line) return false;
+  setSelection(line);
+  return 'line';
+}
+
+function wrapSelection(decorate, clean) {
+  const target = selectTarget();
+  if (!target) return;
   document.execCommand('styleWithCSS', false, false);
   document.execCommand('fontName', false, 'sticky-marker');
   const spans = [];
@@ -462,6 +520,7 @@ function wrapSelection(decorate, clean) {
     const range = document.createRange();
     range.setStart(live[0], 0);
     range.setEnd(live[live.length - 1], live[live.length - 1].childNodes.length);
+    if (target === 'line') range.collapse(false); // was just a caret: leave a caret
     setSelection(range);
   }
   contentChanged();
@@ -518,9 +577,9 @@ function setTextColor(tc) {
 }
 
 function clearFormatting() {
-  restoreSelection();
+  const target = selectTarget();
   const range = selectionInEditor();
-  if (!range) return;
+  if (!target || !range) return;
   document.execCommand('removeFormat');
   for (const el of editor.querySelectorAll('[data-size], [data-font], [data-tc], span[style]')) {
     if (range.intersectsNode(el)) {
@@ -531,6 +590,7 @@ function clearFormatting() {
     }
   }
   unwrapBareSpans();
+  if (target === 'line') window.getSelection().collapseToEnd();
   contentChanged();
 }
 
@@ -640,39 +700,40 @@ function refreshFormatState() {
   for (const b of moreRow.querySelectorAll('[data-tc]')) b.classList.toggle('active', b.dataset.tc === tc);
 }
 
-function positionFormat() {
-  const range = selectionInEditor() || savedRange;
-  if (!range) return;
-  const r = range.getBoundingClientRect();
-  const fw = format.offsetWidth;
-  const fh = format.offsetHeight;
-  let top = r.top - fh - 8;
-  if (top < 4) top = Math.min(r.bottom + 8, window.innerHeight - fh - 4);
-  const left = Math.max(4, Math.min(window.innerWidth - fw - 4, r.left + r.width / 2 - fw / 2));
-  format.style.left = `${left}px`;
-  format.style.top = `${Math.max(4, top)}px`;
-}
+function positionFormat() { placeFloating(); }
 
-function showFormat() {
-  format.hidden = false;
-  refreshFormatState();
-  positionFormat();
+// The bar is open whenever the text is being edited, and sits outside the card.
+let barOpen = false;
+function setBar(open) {
+  if (open === barOpen) return;
+  barOpen = open;
+  if (open) {
+    format.hidden = false;
+    format.classList.add('pre'); // measured now, revealed once the stage has room
+    refreshFormatState();
+  } else {
+    format.hidden = true;
+    moreRow.hidden = true;
+    moreBtn.setAttribute('aria-expanded', 'false');
+  }
+  scheduleStage();
 }
+function hideFormat() { setBar(false); }
 
-function hideFormat() {
-  format.hidden = true;
-  moreRow.hidden = true;
-  moreBtn.setAttribute('aria-expanded', 'false');
+function updateBar() {
+  const active = document.activeElement;
+  setBar(!!note && note.mode === 'type' && document.hasFocus() && !closing
+    && (active === editor || format.contains(active)));
 }
+document.addEventListener('focusin', () => setTimeout(updateBar, 0));
+document.addEventListener('focusout', () => setTimeout(updateBar, 0));
+window.addEventListener('focus', () => setTimeout(updateBar, 0));
 
 document.addEventListener('selectionchange', () => {
-  const range = note && note.mode === 'type' ? selectionInEditor() : null;
-  if (range) {
-    savedRange = range.cloneRange();
-    showFormat();
-  } else if (!format.contains(document.activeElement)) {
-    hideFormat();
-  }
+  if (!note || note.mode !== 'type' || document.activeElement !== editor) return;
+  const sel = window.getSelection();
+  if (sel.rangeCount && editor.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+  if (barOpen) refreshFormatState();
 });
 
 // Keep the editor selection while clicking toolbar buttons (but let the size box take focus).
@@ -694,6 +755,7 @@ format.addEventListener('click', (e) => {
   } else if (btn === moreBtn) {
     moreRow.hidden = !moreRow.hidden;
     moreBtn.setAttribute('aria-expanded', String(!moreRow.hidden));
+    scheduleStage(); // the bar got taller or shorter
   } else if (btn.id === 'bulletBtn') {
     toggleBullets();
   } else if (btn.id === 'checkBtn') {
@@ -785,14 +847,14 @@ function rotateTo(target, { save = true } = {}) {
   tiltGesture.timer = setTimeout(() => { tiltGesture = null; }, 600);
   const { w, h } = tiltGesture;
   const r = (Math.abs(t) * Math.PI) / 180;
-  const W = Math.max(WIN_MIN.width, Math.ceil(w * Math.cos(r) + h * Math.sin(r) + GUTTER * 2));
-  const H = Math.max(WIN_MIN.height, Math.ceil(w * Math.sin(r) + h * Math.cos(r) + GUTTER * 2));
+  const W = Math.max(WIN_MIN.width, Math.ceil(w * Math.cos(r) + h * Math.sin(r) + GUTTER * 2 + stage.left + stage.right));
+  const H = Math.max(WIN_MIN.height, Math.ceil(w * Math.sin(r) + h * Math.cos(r) + GUTTER * 2 + stage.top + stage.bottom));
   const dW = W - window.innerWidth;
   const dH = H - window.innerHeight;
   if (dragging) { dragging.wx -= dW / 2; dragging.wy -= dH / 2; }
   note.tilt = t;
   tiltInput.value = String(t);
-  $('tiltReset').textContent = `${t > 0 ? '+' : ''}${t}°`;
+  $('tiltValue').textContent = `${t > 0 ? '+' : ''}${t}°`;
   noteEl.style.setProperty('--tilt', `${t}deg`);
   if (dW || dH) api.resizeCentered(W, H); else layout(); // resize event re-runs layout
   showTiltBadge(t);
@@ -805,6 +867,10 @@ function rotateTo(target, { save = true } = {}) {
 function showTiltBadge(t) {
   const badge = $('tiltBadge');
   badge.textContent = `${t > 0 ? '+' : ''}${t}°`;
+  if (noteBox) {
+    badge.style.left = `${(noteBox.left + noteBox.right) / 2}px`;
+    badge.style.top = `${Math.max(4, noteBox.top + 8)}px`;
+  }
   badge.hidden = false;
   clearTimeout(badgeTimer);
   badgeTimer = setTimeout(() => { badge.hidden = true; }, 700);
@@ -862,9 +928,20 @@ for (const group of document.querySelectorAll('.spacing')) {
   });
 }
 
-function toggleStylePop(open = stylePop.hidden) {
+let panelOpen = false;
+function toggleStylePop(open = !panelOpen) {
+  if (open === panelOpen) return;
+  panelOpen = open;
   stylePop.hidden = !open;
+  if (open) {
+    stylePop.classList.add('pre'); // measured now, revealed once the stage has room
+    updateBaseUi();
+  } else {
+    endPreview();
+  }
   styleBtn.classList.toggle('open', open);
+  styleBtn.setAttribute('aria-expanded', String(open));
+  scheduleStage();
 }
 
 $('modeBtn').addEventListener('click', () => setMode(note.mode === 'draw' ? 'type' : 'draw'));
@@ -891,10 +968,6 @@ stylePop.addEventListener('click', (e) => {
 tiltInput.addEventListener('input', () => rotateTo(Number(tiltInput.value)));
 $('tiltReset').addEventListener('click', () => rotateTo(0));
 
-document.addEventListener('click', (e) => {
-  if (!stylePop.hidden && !stylePop.contains(e.target)) toggleStylePop(false);
-});
-
 titleEl.addEventListener('input', () => {
   clearTimeout(titleTimer);
   titleTimer = setTimeout(() => {
@@ -914,8 +987,7 @@ titleEl.addEventListener('blur', () => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (!stylePop.hidden) toggleStylePop(false);
-    else if (!format.hidden) { window.getSelection().collapseToEnd(); hideFormat(); }
+    if (panelOpen) toggleStylePop(false);
     else if (document.activeElement) document.activeElement.blur();
     return;
   }
@@ -928,6 +1000,7 @@ document.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'n' && !e.shiftKey) { e.preventDefault(); flushText(); api.newNote(); }
   else if (k === 'w') { e.preventDefault(); closeNote(); }
+  else if (k === 'e' && !e.shiftKey) { e.preventDefault(); toggleStylePop(); }
   else if (k === 'd') { e.preventDefault(); setMode(note.mode === 'draw' ? 'type' : 'draw'); }
   else if (k === 'z' && !e.shiftKey && note.mode === 'draw') { e.preventDefault(); undoStroke(); }
   else if ((k === 'b' || k === 'i' || k === 'u') && note.mode === 'type') {
@@ -996,11 +1069,19 @@ document.fonts.addEventListener('loadingdone', () => { if (note) queueFit(); });
 // Any change to the editor's box (window size, tilt, header height per style) needs a refit.
 new ResizeObserver(() => { if (note) queueFit(); }).observe(editor);
 
+let restageTimer = null;
 window.addEventListener('resize', () => {
   if (!note) return;
   layout();
   sizeCanvas();
   queueFit();
+  if (stagePending) {
+    settleStage();
+  } else if (panelOpen || barOpen) {
+    // the card changed size (grip, tilt): the panel may need more or less room
+    clearTimeout(restageTimer);
+    restageTimer = setTimeout(scheduleStage, 180);
+  }
 });
 
 // ---------- click-through for the transparent gutter ----------
@@ -1010,7 +1091,7 @@ document.addEventListener('mousemove', (e) => {
   if (resizing || dragging) return;
   const overNote = e.target instanceof Element && e.target.closest('.note');
   if (overNote && !current) sparkleTrail(e.clientX, e.clientY);
-  const want = !(e.target instanceof Element && e.target.closest('.note, .format'));
+  const want = !(e.target instanceof Element && e.target.closest('.note, .format, .panel'));
   if (want !== passthrough) {
     passthrough = want;
     api.setPassthrough(want);
@@ -1048,6 +1129,197 @@ function focusText() {
   if (note.mode === 'type') focusEnd();
 }
 api.onFocus(focusText);
+
+// ---------- stage: room outside the card for the panel and format bar ----------
+
+const PANEL_GAP = 10;
+let stageTimer = null;
+let stageSeq = 0;
+let stagePending = false; // asked main to resize; waiting for the resize event
+let stageDirty = false;
+let stageFallback = null;
+
+function scheduleStage() {
+  clearTimeout(stageTimer);
+  stageTimer = setTimeout(syncStage, 0);
+}
+
+async function syncStage() {
+  if (!note || !noteBox) return;
+  if (stagePending) { stageDirty = true; return; }
+  const seq = ++stageSeq;
+  const coreW = window.innerWidth - stage.left - stage.right;
+  const coreH = window.innerHeight - stage.top - stage.bottom;
+  // free space the core already has beside / below the card's bounding box
+  const spareX = (coreW - noteBox.width) / 2;
+  const spareY = (coreH - noteBox.height) / 2;
+  const barNeed = barOpen ? format.offsetHeight + 8 : 0;
+  const panelNeed = panelOpen ? stylePop.offsetHeight - noteBox.height : 0;
+  const vert = Math.max(0, Math.ceil(Math.max(barNeed, panelNeed) + 6 - spareY));
+  const side = panelOpen ? Math.max(0, Math.ceil(stylePop.offsetWidth + PANEL_GAP + 6 - spareX)) : 0;
+  const st = await api.setStage({ side, vert });
+  if (seq !== stageSeq) return;
+  const expectW = coreW + st.left + st.right;
+  const expectH = coreH + st.top + st.bottom;
+  stage = st;
+  if (Math.abs(window.innerWidth - expectW) <= 1 && Math.abs(window.innerHeight - expectH) <= 1) {
+    settleStage(); // window already the right size: no resize event will come
+  } else {
+    stagePending = true;
+    clearTimeout(stageFallback);
+    stageFallback = setTimeout(settleStage, 300);
+  }
+}
+
+function settleStage() {
+  clearTimeout(stageFallback);
+  stagePending = false;
+  layout(); // also places the panel and bar
+  sizeCanvas();
+  revealFloating(stylePop, panelOpen);
+  revealFloating(format, barOpen);
+  if (stageDirty) { stageDirty = false; scheduleStage(); }
+}
+
+function revealFloating(el, open) {
+  if (!open || !el.classList.contains('pre')) return;
+  el.classList.remove('pre');
+  replay(el, 'show');
+}
+
+// Bar: centered under the card (above it if the stage had to go on top).
+// Panel: beside the card, top-aligned (bottom-aligned when the stage is on top).
+function placeFloating() {
+  if (!noteBox) return;
+  const b = noteBox;
+  if (barOpen) {
+    const fw = format.offsetWidth;
+    const fh = format.offsetHeight;
+    const above = stage.top > 0;
+    format.dataset.side = above ? 'top' : 'bottom';
+    const left = Math.max(4, Math.min(window.innerWidth - fw - 4, (b.left + b.right) / 2 - fw / 2));
+    format.style.left = `${left}px`;
+    format.style.top = `${above ? b.top - fh - 8 : b.bottom + 8}px`;
+  }
+  if (panelOpen) {
+    const pw = stylePop.offsetWidth;
+    const ph = stylePop.offsetHeight;
+    const onLeft = stage.left > 0;
+    stylePop.dataset.side = onLeft ? 'left' : 'right';
+    stylePop.style.left = `${onLeft ? b.left - PANEL_GAP - pw : b.right + PANEL_GAP}px`;
+    const top = stage.top > 0 ? b.bottom - ph : b.top;
+    stylePop.style.top = `${Math.max(4, Math.min(window.innerHeight - ph - 4, top))}px`;
+  }
+}
+
+// ---------- customize panel: live previews and controls ----------
+
+const NOTE_COLORS = ['yellow', 'blue', 'green', 'pink', 'purple', 'gray'];
+const swatchesEl = $('swatches');
+const noteFontsEl = $('noteFonts');
+const baseSizeEl = $('baseSize');
+let lookSaveTimer = null;
+
+// Hovering an option shows it on the note; leaving the group puts the real value back.
+function endPreview() {
+  if (!note) return;
+  if (document.documentElement.dataset.theme !== themeNow) {
+    document.documentElement.dataset.theme = themeNow;
+    queueRedraw();
+    queueFit();
+  }
+  applyColor();
+  applyFont();
+}
+
+$('themes').addEventListener('pointerover', (e) => {
+  const b = e.target.closest('[data-theme-id]');
+  if (!b || document.documentElement.dataset.theme === b.dataset.themeId) return;
+  document.documentElement.dataset.theme = b.dataset.themeId;
+  queueRedraw();
+  queueFit();
+});
+$('themes').addEventListener('pointerleave', endPreview);
+
+swatchesEl.addEventListener('pointerover', (e) => {
+  const c = e.target.dataset && e.target.dataset.color;
+  if (!c) return;
+  noteEl.dataset.color = c;
+  document.documentElement.dataset.color = c;
+  queueRedraw();
+});
+swatchesEl.addEventListener('pointerleave', endPreview);
+
+function applyFont() {
+  if (note.font) editor.dataset.font = note.font; else delete editor.dataset.font;
+  for (const b of noteFontsEl.querySelectorAll('[data-note-font]')) {
+    b.setAttribute('aria-checked', String(b.dataset.noteFont === (note.font || 'sans')));
+  }
+  queueFit();
+}
+noteFontsEl.addEventListener('pointerover', (e) => {
+  const b = e.target.closest('[data-note-font]');
+  if (!b) return;
+  editor.dataset.font = b.dataset.noteFont;
+  queueFit();
+});
+noteFontsEl.addEventListener('pointerleave', endPreview);
+noteFontsEl.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-note-font]');
+  if (!b) return;
+  note.font = b.dataset.noteFont === 'sans' ? null : b.dataset.noteFont;
+  applyFont();
+  api.update({ font: note.font });
+});
+
+function updateBaseUi() {
+  if (!note) return;
+  const base = Math.round(parseFloat(editor.style.getPropertyValue('--base')) || FONT_EMPTY);
+  const auto = !note.fontPinned && !note.fontBase;
+  if (document.activeElement !== baseSizeEl) baseSizeEl.value = String(base);
+  $('baseValue').textContent = auto ? `Auto · ${base}px` : `${base}px`;
+  $('autoFitBtn').setAttribute('aria-pressed', String(auto));
+}
+baseSizeEl.addEventListener('input', () => {
+  note.fontBase = Number(baseSizeEl.value);
+  note.fontPinned = true;
+  fitText();
+  clearTimeout(lookSaveTimer);
+  lookSaveTimer = setTimeout(() => api.update({ fontBase: note.fontBase, fontPinned: true }), 200);
+});
+$('autoFitBtn').addEventListener('click', () => {
+  clearTimeout(lookSaveTimer);
+  note.fontPinned = false;
+  note.fontBase = null;
+  api.update({ fontBase: null, fontPinned: false });
+  fitText();
+});
+
+$('panelClose').addEventListener('click', () => toggleStylePop(false));
+
+$('shuffleBtn').addEventListener('click', () => {
+  note.color = pick(NOTE_COLORS.filter((c) => c !== note.color));
+  note.font = pick([null, 'serif', 'mono', 'hand', 'marker'].filter((f) => f !== note.font));
+  applyColor();
+  applyFont();
+  api.update({ color: note.color, font: note.font });
+  let t = Math.round(rand(-6, 6));
+  if (t === note.tilt) t = -t || 3;
+  rotateTo(t);
+  replay(noteEl, 'jelly');
+  react('surprised', 500);
+  if (noteBox) confetti((noteBox.left + noteBox.right) / 2, noteBox.top + 24);
+});
+
+$('resetLookBtn').addEventListener('click', () => {
+  clearTimeout(lookSaveTimer);
+  Object.assign(note, { font: null, fontPinned: false, fontBase: null, lineHeight: null });
+  api.update({ font: null, fontPinned: false, fontBase: null, lineHeight: null });
+  applyFont();
+  applyLineHeight();
+  rotateTo(0);
+  replay(noteEl, 'jelly');
+});
 
 // ---------- fun: particles, eyes, reactions ----------
 
@@ -1096,6 +1368,7 @@ function confetti(x, y) {
 function poof() {
   react('surprised', 400);
   hideFormat();
+  toggleStylePop(false);
   noteEl.classList.add('poof');
   const r = noteEl.getBoundingClientRect();
   const cx = r.left + r.width / 2;
@@ -1211,6 +1484,7 @@ api.init().then(({ note: n, platform, theme }) => {
   applyTilt();
   if (note.fontBase) editor.style.setProperty('--base', `${note.fontBase}px`);
   applyLineHeight();
+  applyFont();
   editor.dataset.placeholder = pick(PLACEHOLDERS);
   if (document.hasFocus()) document.body.classList.add('focused');
   playEnter();

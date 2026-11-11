@@ -11,6 +11,7 @@ const isMac = process.platform === 'darwin';
 const DEFAULT_SIZE = { width: 340, height: 270 };
 const MIN_SIZE = { width: 300, height: 170 };
 const MAX_TILT = 15;
+const NOTE_FONTS = ['sans', 'serif', 'mono', 'hand', 'marker'];
 const COLORS = [
   ['yellow', 'Yellow'], ['blue', 'Blue'], ['green', 'Green'],
   ['pink', 'Pink'], ['purple', 'Purple'], ['gray', 'Gray'],
@@ -55,7 +56,7 @@ function ensureOnScreen(bounds) {
 function placeNew(nearWin) {
   let x; let y; let area;
   if (nearWin && !nearWin.isDestroyed()) {
-    const b = nearWin.getBounds();
+    const b = coreBounds(nearWin);
     area = screen.getDisplayMatching(b).workArea;
     x = b.x + 32;
     y = b.y + 32;
@@ -71,6 +72,53 @@ function placeNew(nearWin) {
     x: clamp(x, area.x, area.x + area.width - DEFAULT_SIZE.width),
     y: clamp(y, area.y, area.y + area.height - DEFAULT_SIZE.height),
   };
+}
+
+// ---------- stage ----------
+// A note's window can temporarily grow an invisible, click-through "stage" beside the card
+// to hold the customize panel and the format bar, so they sit outside the note instead of
+// covering it. The card itself does not move.
+
+const NO_STAGE = { top: 0, right: 0, bottom: 0, left: 0 };
+
+function coreBounds(win) {
+  const b = win.getBounds();
+  const s = win.stage || NO_STAGE;
+  return { x: b.x + s.left, y: b.y + s.top, width: b.width - s.left - s.right, height: b.height - s.top - s.bottom };
+}
+
+// Pick sides with screen room. Keeps the previous side while open so nothing flips mid-use.
+function planStage(win, req) {
+  const core = coreBounds(win);
+  const area = screen.getDisplayMatching(core).workArea;
+  const old = win.stage || NO_STAGE;
+  const side = clamp(Math.round(req.side) || 0, 0, 600);
+  const vert = clamp(Math.round(req.vert) || 0, 0, 900);
+  const st = { ...NO_STAGE };
+  if (side) {
+    const roomRight = area.x + area.width - (core.x + core.width);
+    const roomLeft = core.x - area.x;
+    const useLeft = old.left ? true : old.right ? false : roomRight < side && roomLeft > roomRight;
+    st[useLeft ? 'left' : 'right'] = side;
+  }
+  if (vert) {
+    const roomBelow = area.y + area.height - (core.y + core.height);
+    const roomAbove = core.y - area.y;
+    const useTop = old.top ? true : old.bottom ? false : roomBelow < vert && roomAbove > roomBelow;
+    st[useTop ? 'top' : 'bottom'] = vert;
+  }
+  return st;
+}
+
+function applyStage(win, st) {
+  const core = coreBounds(win);
+  win.stage = st;
+  win.setBounds({
+    x: core.x - st.left,
+    y: core.y - st.top,
+    width: core.width + st.left + st.right,
+    height: core.height + st.top + st.bottom,
+  });
 }
 
 // ---------- windows ----------
@@ -133,8 +181,10 @@ function openWindow(note, { focus = false } = {}) {
     }
   });
 
+  win.stage = { ...NO_STAGE };
   const saveBounds = debounce(() => {
-    if (!win.isDestroyed()) store.update(note.id, { bounds: win.getBounds() }, { touch: false });
+    // Persist the note's own bounds, without the temporary stage around it.
+    if (!win.isDestroyed()) store.update(note.id, { bounds: coreBounds(win) }, { touch: false });
   }, 300);
   win.on('move', saveBounds);
   win.on('resize', saveBounds);
@@ -419,6 +469,8 @@ function sanitize(patch) {
   if (patch.lineHeight === null || (Number.isFinite(patch.lineHeight) && patch.lineHeight >= 0.9 && patch.lineHeight <= 2.5)) {
     out.lineHeight = patch.lineHeight;
   }
+  if (patch.font === null || NOTE_FONTS.includes(patch.font)) out.font = patch.font;
+  if (typeof patch.fontPinned === 'boolean') out.fontPinned = patch.fontPinned;
   if (Array.isArray(patch.strokes)) out.strokes = patch.strokes.slice(0, 5000);
   if (patch.mode === 'type' || patch.mode === 'draw') out.mode = patch.mode;
   if (COLOR_IDS.includes(patch.color)) out.color = patch.color;
@@ -456,11 +508,22 @@ ipcMain.on('note:resize', (event, width, height) => {
   const { win } = noteFor(event);
   if (!win || !Number.isFinite(width) || !Number.isFinite(height)) return;
   const b = win.getBounds();
+  const s = win.stage || NO_STAGE; // the minimum applies to the note, not the stage around it
   win.setBounds({
     x: b.x, y: b.y,
-    width: Math.max(MIN_SIZE.width, Math.round(width)),
-    height: Math.max(MIN_SIZE.height, Math.round(height)),
+    width: Math.max(MIN_SIZE.width + s.left + s.right, Math.round(width)),
+    height: Math.max(MIN_SIZE.height + s.top + s.bottom, Math.round(height)),
   });
+});
+
+// Reply with the planned stage first, then resize: the page needs the new insets before
+// the resize event arrives so its layout never uses a mismatched pair.
+ipcMain.handle('note:stage', (event, req) => {
+  const { win } = noteFor(event);
+  if (!win || !req || typeof req !== 'object') return { ...NO_STAGE };
+  const st = planStage(win, req);
+  setImmediate(() => { if (!win.isDestroyed()) applyStage(win, st); });
+  return st;
 });
 
 // Resize around the window's center (used when rotating, so the card stays put).
@@ -468,8 +531,9 @@ ipcMain.on('note:resize-centered', (event, width, height) => {
   const { win } = noteFor(event);
   if (!win || !Number.isFinite(width) || !Number.isFinite(height)) return;
   const b = win.getBounds();
-  const w = Math.max(MIN_SIZE.width, Math.round(width));
-  const h = Math.max(MIN_SIZE.height, Math.round(height));
+  const s = win.stage || NO_STAGE;
+  const w = Math.max(MIN_SIZE.width + s.left + s.right, Math.round(width));
+  const h = Math.max(MIN_SIZE.height + s.top + s.bottom, Math.round(height));
   win.setBounds({ x: Math.round(b.x + (b.width - w) / 2), y: Math.round(b.y + (b.height - h) / 2), width: w, height: h });
 });
 
