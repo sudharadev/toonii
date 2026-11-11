@@ -855,6 +855,7 @@ canvas {
 :root[data-theme="toon"] .bar { cursor: url("cursors/grab.svg") 15 9, grab; }
 :root[data-theme="toon"] body.dragging,
 :root[data-theme="toon"] body.dragging * { cursor: url("cursors/grabbing.svg") 16 15, grabbing !important; }
+:root[data-theme="toon"] .grip { cursor: url("cursors/resize.svg") 16 16, nwse-resize; }
 :root[data-theme="toon"] [data-mode="draw"] canvas { cursor: url("cursors/pencil.svg") 6 26, crosshair; }
 :root[data-theme="toon"] [data-mode="draw"][data-tool="eraser"] canvas { cursor: url("cursors/eraser.svg") 16 16, cell; }
 
