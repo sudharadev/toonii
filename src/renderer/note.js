@@ -15,7 +15,9 @@ const styleBtn = $('styleBtn');
 const stylePop = $('stylePop');
 const tiltInput = $('tilt');
 const format = $('format');
-const fontsRow = $('fonts');
+const moreRow = $('more');
+const moreBtn = $('moreBtn');
+const sizeInput = $('sizeInput');
 
 const GUTTER = 16;
 const FONT_MAX = 36;
@@ -26,7 +28,9 @@ const PEN_WIDTH = 3;
 const ERASER_WIDTH = 18;
 const SIZES = ['s', 'm', 'l', 'xl'];
 const FONTS = ['sans', 'serif', 'mono', 'hand', 'marker'];
-const FONT_LABELS = { sans: 'Sans', serif: 'Serif', mono: 'Mono', hand: 'Hand', marker: 'Marker' };
+const TEXT_COLORS = ['accent', 'red', 'orange', 'green', 'blue', 'purple'];
+const SIZE_MIN = 8;
+const SIZE_MAX = 96;
 
 let note = null;
 let isMac = false;
@@ -47,6 +51,17 @@ let wantFocus = false;
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SPAN', 'DIV', 'P', 'BR', 'UL', 'OL', 'LI']);
 const ALLOWED_STYLES = ['font-weight', 'font-style', 'text-decoration-line'];
 
+function allowedAttr(tag, name, value) {
+  switch (name) {
+    case 'data-size': return SIZES.includes(value);
+    case 'data-font': return FONTS.includes(value);
+    case 'data-tc': return TEXT_COLORS.includes(value);
+    case 'data-check': return tag === 'UL';
+    case 'data-checked': return tag === 'LI' && (value === 'true' || value === 'false');
+    default: return false;
+  }
+}
+
 function cleanNode(root) {
   for (const child of [...root.childNodes]) {
     if (child.nodeType === Node.TEXT_NODE) continue;
@@ -57,10 +72,10 @@ function cleanNode(root) {
     const kept = ALLOWED_STYLES
       .map((p) => [p, child.style.getPropertyValue(p)])
       .filter(([, v]) => v);
+    const fs = child.style.getPropertyValue('font-size');
+    if (/^\d{1,2}(\.\d+)?px$/.test(fs)) kept.push(['font-size', fs]);
     for (const attr of [...child.attributes]) {
-      const ok = (attr.name === 'data-size' && SIZES.includes(attr.value))
-        || (attr.name === 'data-font' && FONTS.includes(attr.value));
-      if (!ok) child.removeAttribute(attr.name);
+      if (!allowedAttr(child.tagName, attr.name, attr.value)) child.removeAttribute(attr.name);
     }
     for (const [p, v] of kept) child.style.setProperty(p, v);
   }
@@ -143,6 +158,7 @@ function toLocal(clientX, clientY, el) {
 
 function applyColor() {
   noteEl.dataset.color = note.color;
+  document.documentElement.dataset.color = note.color; // tints popovers + format toolbar
   for (const b of stylePop.querySelectorAll('[data-color]')) {
     b.setAttribute('aria-checked', String(b.dataset.color === note.color));
   }
@@ -349,7 +365,14 @@ function selectionInEditor() {
 function anchorElement() {
   const sel = window.getSelection();
   if (!sel.rangeCount) return null;
-  const n = sel.getRangeAt(0).startContainer;
+  const r = sel.getRangeAt(0);
+  let n = r.startContainer;
+  // Caret can sit "between children" of an element (e.g. editor > ul right after a list is
+  // made); resolve to the node at that offset so closest() finds the real block.
+  if (n.nodeType === Node.ELEMENT_NODE && n.childNodes.length) {
+    n = n.childNodes[Math.min(r.startOffset, n.childNodes.length - 1)];
+    while (n.nodeType === Node.ELEMENT_NODE && n.firstChild && n.tagName !== 'BR') n = n.firstChild;
+  }
   return n.nodeType === Node.ELEMENT_NODE ? n : n.parentElement;
 }
 
@@ -359,69 +382,197 @@ function currentAttr(name, fallback) {
   return hit && editor.contains(hit) ? hit.dataset[name] : fallback;
 }
 
-// Wrap the selection in <span data-{attr}={value}>. Uses execCommand's <font> output as a
-// marker so the browser handles splitting across elements, then swaps <font> for spans.
-function applySpanAttr(attr, value) {
+// Wrap the selection in a <span> and let `decorate` style it; `clean` strips the same
+// property from nested elements so the new value wins. Uses execCommand's <font> output as
+// a marker so the browser handles splitting across elements, then swaps <font> for spans.
+function wrapSelection(decorate, clean) {
+  restoreSelection();
+  if (!selectionInEditor()) return;
   document.execCommand('styleWithCSS', false, false);
   document.execCommand('fontName', false, 'sticky-marker');
   const spans = [];
   for (const f of editor.querySelectorAll('font[face="sticky-marker"]')) {
     const span = document.createElement('span');
-    span.dataset[attr] = value;
+    decorate(span);
     span.append(...f.childNodes);
-    for (const inner of span.querySelectorAll(`[data-${attr}]`)) delete inner.dataset[attr];
+    span.querySelectorAll('*').forEach(clean);
     f.replaceWith(span);
     spans.push(span);
   }
   unwrapBareSpans();
-  if (spans.length) {
-    const live = spans.filter((s) => s.isConnected);
-    if (live.length) {
-      const range = document.createRange();
-      range.setStartBefore(live[0]);
-      range.setEndAfter(live[live.length - 1]);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
+  const live = spans.filter((s) => s.isConnected);
+  if (live.length) {
+    const range = document.createRange();
+    range.setStart(live[0], 0);
+    range.setEnd(live[live.length - 1], live[live.length - 1].childNodes.length);
+    setSelection(range);
   }
   contentChanged();
 }
 
 function unwrapBareSpans() {
   for (const s of editor.querySelectorAll('span')) {
+    if (s.getAttribute('style') === '') s.removeAttribute('style');
     if (!s.attributes.length) s.replaceWith(...s.childNodes);
   }
 }
 
-function stepSize(step) {
-  const i = SIZES.indexOf(currentAttr('size', 'm'));
-  const next = SIZES[Math.max(0, Math.min(SIZES.length - 1, i + step))];
-  applySpanAttr('size', next);
+function setSelection(range) {
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  savedRange = range.cloneRange();
+}
+
+// Typing in the size box moves focus out of the editor; put the selection back first.
+let savedRange = null;
+function restoreSelection() {
+  // Only needed when focus left the editor (e.g. the size box); otherwise keep the live caret.
+  if (document.activeElement === editor || !savedRange) return;
+  editor.focus({ preventScroll: true });
+  setSelection(savedRange);
+}
+
+function currentSize() {
+  const el = anchorElement();
+  return el && editor.contains(el) ? Math.round(parseFloat(getComputedStyle(el).fontSize)) : 16;
+}
+
+function setSize(px) {
+  const size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, Math.round(px)));
+  wrapSelection(
+    (s) => { s.style.fontSize = `${size}px`; },
+    (el) => { el.style.removeProperty('font-size'); delete el.dataset.size; },
+  );
+  sizeInput.value = String(size);
+}
+
+function setFont(font) {
+  wrapSelection((s) => { s.dataset.font = font; }, (el) => { delete el.dataset.font; });
+}
+
+function setTextColor(tc) {
+  wrapSelection((s) => { if (tc) s.dataset.tc = tc; }, (el) => { delete el.dataset.tc; });
 }
 
 function clearFormatting() {
+  restoreSelection();
   const range = selectionInEditor();
   if (!range) return;
   document.execCommand('removeFormat');
-  for (const el of editor.querySelectorAll('[data-size], [data-font]')) {
-    if (range.intersectsNode(el)) { delete el.dataset.size; delete el.dataset.font; }
+  for (const el of editor.querySelectorAll('[data-size], [data-font], [data-tc], span[style]')) {
+    if (range.intersectsNode(el)) {
+      delete el.dataset.size;
+      delete el.dataset.font;
+      delete el.dataset.tc;
+      el.removeAttribute('style');
+    }
   }
   unwrapBareSpans();
   contentChanged();
 }
 
+// ---------- lists & checklists ----------
+
+function blockList() {
+  const el = anchorElement();
+  const ul = el && el.closest('ul');
+  return ul && editor.contains(ul) ? ul : null;
+}
+
+function toggleBullets() {
+  restoreSelection();
+  const ul = blockList();
+  if (ul && ul.hasAttribute('data-check')) {
+    ul.removeAttribute('data-check');
+    ul.querySelectorAll('li').forEach((li) => li.removeAttribute('data-checked'));
+  } else {
+    document.execCommand('insertUnorderedList');
+  }
+  contentChanged();
+}
+
+function toggleChecklist() {
+  restoreSelection();
+  let ul = blockList();
+  if (ul && ul.hasAttribute('data-check')) {
+    document.execCommand('insertUnorderedList'); // back to plain text
+  } else {
+    if (!ul) document.execCommand('insertUnorderedList');
+    ul = blockList();
+    if (ul) {
+      ul.setAttribute('data-check', '');
+      ul.querySelectorAll(':scope > li').forEach((li) => {
+        if (!li.dataset.checked) li.dataset.checked = 'false';
+      });
+      const sel = window.getSelection();
+      if (sel.isCollapsed && !ul.contains(sel.anchorNode) && ul.lastElementChild) {
+        const range = document.createRange();
+        range.setStart(ul.lastElementChild, 0);
+        range.collapse(true);
+        setSelection(range);
+      }
+    }
+  }
+  contentChanged();
+}
+
+// Click on the box (left gutter of a checklist item) toggles it.
+editor.addEventListener('mousedown', (e) => {
+  const li = e.target instanceof Element && e.target.closest('ul[data-check] > li');
+  if (!li || note.mode !== 'type') return;
+  const [lx] = toLocal(e.clientX, e.clientY, li);
+  const box = parseFloat(getComputedStyle(li).fontSize) * 1.25;
+  if (lx > box) return;
+  e.preventDefault();
+  li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true';
+  contentChanged();
+});
+
+// New items start unchecked; "[] " and "- " at line start become lists (markdown-style).
+function onEditorInput(e) {
+  if (e.inputType === 'insertParagraph') {
+    const el = anchorElement();
+    const li = el && el.closest('ul[data-check] > li');
+    if (li) li.dataset.checked = 'false';
+  } else if (e.inputType === 'insertText' && e.data === ' ') {
+    const sel = window.getSelection();
+    const node = sel.anchorNode;
+    if (node && node.nodeType === Node.TEXT_NODE && !node.previousSibling && !blockList()) {
+      const before = node.data.slice(0, sel.anchorOffset);
+      const check = /^\[ ?\][\s ]$/.test(before);
+      const bullet = /^[-*][\s ]$/.test(before);
+      if (check || bullet) {
+        const range = document.createRange();
+        range.setStart(node, 0);
+        range.setEnd(node, sel.anchorOffset);
+        setSelection(range);
+        document.execCommand('delete');
+        if (check) toggleChecklist(); else toggleBullets();
+      }
+    }
+  }
+  contentChanged();
+}
+
+// ---------- toolbar ----------
+
 function refreshFormatState() {
   for (const b of format.querySelectorAll('[data-cmd]')) {
     b.classList.toggle('active', document.queryCommandState(b.dataset.cmd));
   }
+  const ul = blockList();
+  $('bulletBtn').classList.toggle('active', !!ul && !ul.hasAttribute('data-check'));
+  $('checkBtn').classList.toggle('active', !!ul && ul.hasAttribute('data-check'));
+  if (document.activeElement !== sizeInput) sizeInput.value = String(currentSize());
   const font = currentAttr('font', 'sans');
-  $('fontLabel').textContent = FONT_LABELS[font];
-  for (const b of fontsRow.querySelectorAll('[data-font]')) b.classList.toggle('active', b.dataset.font === font);
+  const tc = currentAttr('tc', '');
+  for (const b of moreRow.querySelectorAll('[data-font]')) b.classList.toggle('active', b.dataset.font === font);
+  for (const b of moreRow.querySelectorAll('[data-tc]')) b.classList.toggle('active', b.dataset.tc === tc);
 }
 
 function positionFormat() {
-  const range = selectionInEditor();
+  const range = selectionInEditor() || savedRange;
   if (!range) return;
   const r = range.getBoundingClientRect();
   const fw = format.offsetWidth;
@@ -441,31 +592,43 @@ function showFormat() {
 
 function hideFormat() {
   format.hidden = true;
-  fontsRow.hidden = true;
-  $('fontBtn').classList.remove('open');
+  moreRow.hidden = true;
+  moreBtn.setAttribute('aria-expanded', 'false');
 }
 
 document.addEventListener('selectionchange', () => {
-  if (note && note.mode === 'type' && selectionInEditor()) showFormat();
-  else if (!format.contains(document.activeElement)) hideFormat();
+  const range = note && note.mode === 'type' ? selectionInEditor() : null;
+  if (range) {
+    savedRange = range.cloneRange();
+    showFormat();
+  } else if (!format.contains(document.activeElement)) {
+    hideFormat();
+  }
 });
 
-// Keep the editor selection while clicking toolbar buttons.
-format.addEventListener('mousedown', (e) => e.preventDefault());
+// Keep the editor selection while clicking toolbar buttons (but let the size box take focus).
+format.addEventListener('mousedown', (e) => { if (e.target !== sizeInput) e.preventDefault(); });
 format.addEventListener('click', (e) => {
   const btn = e.target.closest('button');
   if (!btn) return;
   if (btn.dataset.cmd) {
+    restoreSelection();
     document.execCommand('styleWithCSS', false, false);
     document.execCommand(btn.dataset.cmd);
     contentChanged();
   } else if (btn.dataset.sizeStep) {
-    stepSize(Number(btn.dataset.sizeStep));
+    setSize(currentSize() + Number(btn.dataset.sizeStep));
   } else if (btn.dataset.font) {
-    applySpanAttr('font', btn.dataset.font);
-  } else if (btn.id === 'fontBtn') {
-    fontsRow.hidden = !fontsRow.hidden;
-    btn.classList.toggle('open', !fontsRow.hidden);
+    setFont(btn.dataset.font);
+  } else if ('tc' in btn.dataset) {
+    setTextColor(btn.dataset.tc);
+  } else if (btn === moreBtn) {
+    moreRow.hidden = !moreRow.hidden;
+    moreBtn.setAttribute('aria-expanded', String(!moreRow.hidden));
+  } else if (btn.id === 'bulletBtn') {
+    toggleBullets();
+  } else if (btn.id === 'checkBtn') {
+    toggleChecklist();
   } else if (btn.id === 'clearFormat') {
     clearFormatting();
   }
@@ -473,7 +636,27 @@ format.addEventListener('click', (e) => {
   positionFormat();
 });
 
-editor.addEventListener('input', contentChanged);
+sizeInput.addEventListener('focus', () => sizeInput.select());
+sizeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const v = parseInt(sizeInput.value, 10);
+    if (Number.isFinite(v)) setSize(v); else restoreSelection();
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    const v = (parseInt(sizeInput.value, 10) || currentSize()) + (e.key === 'ArrowUp' ? 1 : -1);
+    setSize(v);
+    sizeInput.focus();
+    sizeInput.select();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    restoreSelection();
+  }
+});
+sizeInput.addEventListener('input', () => { sizeInput.value = sizeInput.value.replace(/\D/g, ''); });
+
+editor.addEventListener('input', onEditorInput);
 editor.addEventListener('blur', flushText);
 // Paste and drop as plain text: keeps notes clean and blocks remote content.
 editor.addEventListener('paste', (e) => {

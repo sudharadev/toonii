@@ -28,6 +28,9 @@
       <symbol id="i-smaller" viewBox="0 0 24 24"><path d="M3 18 8.5 5 14 18M5 14h7M16 12h6"/></symbol>
       <symbol id="i-larger" viewBox="0 0 24 24"><path d="M3 18 8.5 5 14 18M5 14h7M16 12h6M19 9v6"/></symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+      <symbol id="i-checklist" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></symbol>
     </defs>
   </svg>
 
@@ -92,25 +95,41 @@
   <!-- Floating format toolbar: outside .note so it never rotates. -->
   <div class="format" id="format" role="toolbar" aria-label="Text formatting" hidden>
     <div class="row">
-      <button class="font-btn" id="fontBtn" title="Font"><span id="fontLabel">Sans</span><svg class="i"><use href="#i-chevron"/></svg></button>
-      <span class="sep"></span>
-      <button class="icon" data-size-step="-1" title="Smaller"><svg class="i"><use href="#i-smaller"/></svg></button>
-      <button class="icon" data-size-step="1" title="Larger"><svg class="i"><use href="#i-larger"/></svg></button>
+      <div class="stepper" title="Font size">
+        <button class="step" data-size-step="-1" aria-label="Smaller"><svg class="i"><use href="#i-minus"/></svg></button>
+        <input id="sizeInput" inputmode="numeric" maxlength="3" aria-label="Font size" spellcheck="false">
+        <button class="step" data-size-step="1" aria-label="Larger"><svg class="i"><use href="#i-plus"/></svg></button>
+      </div>
       <span class="sep"></span>
       <button class="icon" data-cmd="bold" title="Bold (Ctrl+B)"><svg class="i"><use href="#i-bold"/></svg></button>
       <button class="icon" data-cmd="italic" title="Italic (Ctrl+I)"><svg class="i"><use href="#i-italic"/></svg></button>
       <button class="icon" data-cmd="underline" title="Underline (Ctrl+U)"><svg class="i"><use href="#i-underline"/></svg></button>
       <button class="icon" data-cmd="strikeThrough" title="Strikethrough"><svg class="i"><use href="#i-strike"/></svg></button>
       <span class="sep"></span>
-      <button class="icon" data-cmd="insertUnorderedList" title="Bullet list"><svg class="i"><use href="#i-list"/></svg></button>
-      <button class="icon" id="clearFormat" title="Clear formatting"><svg class="i"><use href="#i-clear-format"/></svg></button>
+      <button class="icon" id="bulletBtn" title="Bullet list (type - then space)"><svg class="i"><use href="#i-list"/></svg></button>
+      <button class="icon" id="checkBtn" title="Checklist (type [] then space)"><svg class="i"><use href="#i-checklist"/></svg></button>
+      <span class="sep"></span>
+      <button class="icon more-btn" id="moreBtn" title="Font, color, clear" aria-expanded="false"><span class="aa">Aa</span></button>
     </div>
-    <div class="row fonts" id="fonts" hidden>
-      <button data-font="sans">Sans</button>
-      <button data-font="serif">Serif</button>
-      <button data-font="mono">Mono</button>
-      <button data-font="hand">Hand</button>
-      <button data-font="marker">Marker</button>
+    <div class="more" id="more" hidden>
+      <div class="fonts">
+        <button data-font="sans">Sans</button>
+        <button data-font="serif">Serif</button>
+        <button data-font="mono">Mono</button>
+        <button data-font="hand">Hand</button>
+        <button data-font="marker">Marker</button>
+      </div>
+      <div class="colors">
+        <button data-tc="" title="Default color"></button>
+        <button data-tc="accent" title="Note color"></button>
+        <button data-tc="red" title="Red"></button>
+        <button data-tc="orange" title="Orange"></button>
+        <button data-tc="green" title="Green"></button>
+        <button data-tc="blue" title="Blue"></button>
+        <button data-tc="purple" title="Purple"></button>
+        <span class="grow"></span>
+        <button class="icon" id="clearFormat" title="Clear formatting"><svg class="i"><use href="#i-clear-format"/></svg></button>
+      </div>
     </div>
   </div>
 

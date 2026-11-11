@@ -31,7 +31,9 @@ npm run dist:mac   # DMG in dist/             (run on a Mac)
 
 Four styles for all notes: Aura (default), Minimal, Midnight, Classic. Pick one in the palette popover or tray → Style.
 
-Select text to get the format toolbar (font, size, bold, italic, underline, strike, bullets).
+Select text to get the format toolbar: font size (− 16 +, or type a number), bold, italic,
+underline, strike, bullets, checklist, and **Aa** for font family, text color and clear.
+Type `[] ` at the start of a line for a checklist, `- ` for bullets. Click a box to tick it.
 Tilt a note with the palette button → slider, or right-click → Tilt.
 
 Closed notes with content can be restored from the tray menu → **Recently closed**.
