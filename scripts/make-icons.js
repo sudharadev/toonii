@@ -95,17 +95,6 @@ function appPixel(x, y, s) {
   ]);
 }
 
-// Tray: just the eyes, so they stay readable at 16px on light and dark taskbars.
-function trayPixel(x, y, s) {
-  const u = x / s;
-  const v = y / s;
-  const line = Math.max(1, s * 0.09);
-  return paint(x, y, [
-    ...eyeLayers(u, v, s, 0.26, 0.5, 0.235, line),
-    ...eyeLayers(u, v, s, 0.74, 0.5, 0.235, line),
-  ]);
-}
-
 // ICO with PNG-compressed entries (supported since Windows Vista).
 function encodeIco(sizes, pixel) {
   const pngs = sizes.map((size) => encodePng(size, pixel));
@@ -132,8 +121,10 @@ fs.mkdirSync(out, { recursive: true });
 const files = [
   ['icon.png', encodePng(1024, appPixel)],
   ['icon.ico', encodeIco([16, 24, 32, 48, 64, 128, 256], appPixel)],
-  ['tray.png', encodePng(16, trayPixel)],
-  ['tray@2x.png', encodePng(32, trayPixel)],
+  // Tray uses the same card-with-eyes as the app icon, so it matches everywhere.
+  ['tray.png', encodePng(16, appPixel)],
+  ['tray@2x.png', encodePng(32, appPixel)],
+  ['tray@4x.png', encodePng(64, appPixel)],
 ];
 for (const [name, buf] of files) {
   fs.writeFileSync(path.join(out, name), buf);
