@@ -208,19 +208,10 @@ let themeNow = 'toon';
 function applyTheme(theme) {
   themeNow = theme;
   document.documentElement.dataset.theme = theme;
-  for (const b of $('themes').querySelectorAll('[data-theme-id]')) {
-    b.setAttribute('aria-checked', String(b.dataset.themeId === theme));
-  }
   queueRedraw(); // pen color depends on the style
   if (note) queueFit();
 }
 
-$('themes').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-theme-id]');
-  if (!b) return;
-  applyTheme(b.dataset.themeId);
-  api.setTheme(b.dataset.themeId);
-});
 api.onTheme(applyTheme);
 // Minimal follows system dark mode; redraw ink when it flips.
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', queueRedraw);
@@ -1232,14 +1223,6 @@ function endPreview() {
   applyFont();
 }
 
-$('themes').addEventListener('pointerover', (e) => {
-  const b = e.target.closest('[data-theme-id]');
-  if (!b || document.documentElement.dataset.theme === b.dataset.themeId) return;
-  document.documentElement.dataset.theme = b.dataset.themeId;
-  queueRedraw();
-  queueFit();
-});
-$('themes').addEventListener('pointerleave', endPreview);
 
 swatchesEl.addEventListener('pointerover', (e) => {
   const c = e.target.dataset && e.target.dataset.color;

@@ -1,8 +1,8 @@
 {
-  "name": "stickynotee",
-  "productName": "Stickynotee",
+  "name": "toonii",
+  "productName": "Toonii",
   "version": "0.1.0",
-  "description": "Modern sticky notes that float on your desktop. Type or draw.",
+  "description": "Cartoon sticky notes with googly eyes that float on your desktop. Type or draw.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
@@ -12,8 +12,8 @@
     "dist:mac": "electron-builder --mac"
   },
   "build": {
-    "appId": "com.stickynotee.app",
-    "productName": "Stickynotee",
+    "appId": "com.toonii.app",
+    "productName": "Toonii",
     "files": [
       "src/**/*",
       "assets/**/*",
@@ -21,7 +21,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": true,

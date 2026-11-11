@@ -1,4 +1,6 @@
-// Generates assets/icon.png (512) and tray icons as plain PNGs, no dependencies.
+// Generates the Toonii app icon (googly eyes on a Toon card) as plain PNG/ICO files, no
+// dependencies: assets/icon.png (1024, macOS + Linux), assets/icon.ico (Windows, 16-256)
+// and the tray icons. Run with `npm run icons`.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -52,25 +54,88 @@ function over(dst, rgb, a) {
   return [mix(0), mix(1), mix(2), outA];
 }
 
-function notePixel(x, y, s) {
+const circle = (px, py, cx, cy, r) => Math.hypot(px - cx, py - cy) - r;
+
+const INK = [23, 23, 28];
+const PAPER = [255, 216, 77];
+const WHITE = [255, 255, 255];
+
+// Layers are painted back to front; every shape is a signed distance in pixels.
+function paint(x, y, layers) {
   let px = [0, 0, 0, 0];
-  const pad = s * 0.08;
-  const half = (s - pad * 2) / 2;
-  px = over(px, [255, 217, 102], cover(roundRect(x, y, s / 2, s / 2, half, half, s * 0.18)));
-  const ink = [138, 90, 0];
-  const t = Math.max(1, s * 0.07);
-  const lines = [[0.36, 0.72], [0.52, 0.72], [0.68, 0.56]];
-  for (const [ly, lx2] of lines) {
-    const x1 = s * 0.28, x2 = s * lx2;
-    const d = roundRect(x, y, (x1 + x2) / 2, s * ly, (x2 - x1) / 2, t / 2, t / 2);
-    px = over(px, ink, cover(d) * 0.75);
-  }
+  for (const [rgb, d] of layers) px = over(px, rgb, cover(d));
   return px.map((v, i) => (i < 3 ? Math.round(v) : v));
+}
+
+// Eye: outlined white ball with a pupil and a glint, looking up and to the right.
+function eyeLayers(x, y, s, cx, cy, r, line) {
+  const pr = r * 0.48;
+  const pcx = cx + r * 0.22;
+  const pcy = cy - r * 0.1;
+  return [
+    [INK, circle(x, y, cx, cy, r) * s],
+    [WHITE, circle(x, y, cx, cy, r) * s + line],
+    [INK, circle(x, y, pcx, pcy, pr) * s],
+    [WHITE, circle(x, y, pcx - pr * 0.35, pcy - pr * 0.35, pr * 0.34) * s],
+  ];
+}
+
+function appPixel(x, y, s) {
+  const u = x / s;
+  const v = y / s;
+  const line = Math.max(1, s * 0.042);
+  const card = (ox, oy) => roundRect(u, v, 0.47 + ox, 0.47 + oy, 0.385, 0.385, 0.17) * s;
+  const off = Math.max(1, s * 0.045) / s;
+  return paint(x, y, [
+    [INK, card(off, off)], // hard cartoon shadow
+    [INK, card(0, 0)],
+    [PAPER, card(0, 0) + line],
+    ...eyeLayers(u, v, s, 0.315, 0.47, 0.145, line * 0.85),
+    ...eyeLayers(u, v, s, 0.625, 0.47, 0.145, line * 0.85),
+  ]);
+}
+
+// Tray: just the eyes, so they stay readable at 16px on light and dark taskbars.
+function trayPixel(x, y, s) {
+  const u = x / s;
+  const v = y / s;
+  const line = Math.max(1, s * 0.09);
+  return paint(x, y, [
+    ...eyeLayers(u, v, s, 0.26, 0.5, 0.235, line),
+    ...eyeLayers(u, v, s, 0.74, 0.5, 0.235, line),
+  ]);
+}
+
+// ICO with PNG-compressed entries (supported since Windows Vista).
+function encodeIco(sizes, pixel) {
+  const pngs = sizes.map((size) => encodePng(size, pixel));
+  const head = Buffer.alloc(6 + 16 * sizes.length);
+  head.writeUInt16LE(0, 0);
+  head.writeUInt16LE(1, 2);
+  head.writeUInt16LE(sizes.length, 4);
+  let offset = head.length;
+  sizes.forEach((size, i) => {
+    const e = 6 + i * 16;
+    head[e] = size >= 256 ? 0 : size;
+    head[e + 1] = size >= 256 ? 0 : size;
+    head.writeUInt16LE(1, e + 4); // planes
+    head.writeUInt16LE(32, e + 6); // bits per pixel
+    head.writeUInt32LE(pngs[i].length, e + 8);
+    head.writeUInt32LE(offset, e + 12);
+    offset += pngs[i].length;
+  });
+  return Buffer.concat([head, ...pngs]);
 }
 
 const out = path.join(__dirname, '..', 'assets');
 fs.mkdirSync(out, { recursive: true });
-for (const [name, size] of [['icon.png', 512], ['tray.png', 16], ['tray@2x.png', 32]]) {
-  fs.writeFileSync(path.join(out, name), encodePng(size, notePixel));
+const files = [
+  ['icon.png', encodePng(1024, appPixel)],
+  ['icon.ico', encodeIco([16, 24, 32, 48, 64, 128, 256], appPixel)],
+  ['tray.png', encodePng(16, trayPixel)],
+  ['tray@2x.png', encodePng(32, trayPixel)],
+];
+for (const [name, buf] of files) {
+  fs.writeFileSync(path.join(out, name), buf);
   console.log('wrote', name);
 }

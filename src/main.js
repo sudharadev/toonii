@@ -17,15 +17,13 @@ const COLORS = [
   ['pink', 'Pink'], ['purple', 'Purple'], ['gray', 'Gray'],
 ];
 const COLOR_IDS = COLORS.map(([id]) => id);
-const THEMES = [
-  ['toon', 'Toon'], ['aura', 'Aura'], ['minimal', 'Minimal'], ['midnight', 'Midnight'], ['classic', 'Classic'],
-];
-const THEME_IDS = THEMES.map(([id]) => id);
-const DEFAULT_THEME = 'toon';
-const currentTheme = () => {
-  const t = store.getSetting('theme', DEFAULT_THEME);
-  return THEME_IDS.includes(t) ? t : DEFAULT_THEME;
-};
+// Toonii ships one style. The renderer still reads it from here so a future style can
+// be added without touching the IPC.
+const THEME_IDS = ['toon'];
+const currentTheme = () => 'toon';
+const APP_NAME = 'Toonii';
+const APP_ID = 'com.toonii.app';
+const LEGACY_DATA_DIRS = ['Stickynotee', 'stickynotee']; // before the rename
 const SHORTCUTS = { newNote: 'CommandOrControl+Alt+N', toggleAll: 'CommandOrControl+Alt+H' };
 
 const windows = new Map(); // note id -> BrowserWindow
@@ -383,12 +381,6 @@ function refreshTray() {
       label: anyVisible() ? 'Hide all notes' : 'Show all notes',
       accelerator: SHORTCUTS.toggleAll, registerAccelerator: false, click: toggleAll,
     },
-    {
-      label: 'Style',
-      submenu: THEMES.map(([id, label]) => ({
-        label, type: 'radio', checked: currentTheme() === id, click: () => setTheme(id),
-      })),
-    },
     { type: 'separator' },
     { label: 'Recently closed', submenu: recent },
     { type: 'separator' },
@@ -397,14 +389,14 @@ function refreshTray() {
       checked: app.getLoginItemSettings().openAtLogin,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
-    { label: 'Quit Stickynotee', click: () => app.quit() },
+    { label: `Quit ${APP_NAME}`, click: () => app.quit() },
   ]));
 }
 
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
   tray = new Tray(icon);
-  tray.setToolTip('Stickynotee');
+  tray.setToolTip(APP_NAME);
   if (!isMac) tray.on('click', showAll);
   refreshTray();
 }
@@ -551,19 +543,33 @@ ipcMain.on('note:passthrough', (event, ignore) => {
 
 // ---------- lifecycle ----------
 
+// The app used to be called Stickynotee, so its notes live in that user-data folder.
+// Copy them over once; the old folder is left untouched as a backup.
+function migrateLegacyData() {
+  const fs = require('fs');
+  const target = path.join(app.getPath('userData'), 'notes.json');
+  if (fs.existsSync(target)) return;
+  for (const dir of LEGACY_DATA_DIRS) {
+    const old = path.join(app.getPath('appData'), dir, 'notes.json');
+    if (path.resolve(old).toLowerCase() === path.resolve(target).toLowerCase()) continue;
+    if (!fs.existsSync(old)) continue;
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(old, target);
+    } catch { /* start fresh rather than fail to launch */ }
+    return;
+  }
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showAll);
 
   app.whenReady().then(() => {
-    if (process.platform === 'win32') app.setAppUserModelId('com.stickynotee.app');
+    if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+    migrateLegacyData();
     store.load(app.getPath('userData'));
-    // One-time switch to the Toon style when it ships; later choices are respected.
-    if (!store.getSetting('toonIntroduced', false)) {
-      store.setSetting('theme', 'toon');
-      store.setSetting('toonIntroduced', true);
-    }
     updateCursorFeed();
     createAppMenu();
     createTray();
