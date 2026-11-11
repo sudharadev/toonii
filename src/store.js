@@ -73,8 +73,35 @@ const get = (id) => data.notes.find((n) => n.id === id) || null;
 const trash = () => data.trash;
 const hasContent = (n) => n.text.trim().length > 0 || n.strokes.length > 0;
 
+// New notes get a playful two-word name ("Velvet Comet") instead of "Note 7".
+const NAME_ADJECTIVES = [
+  'Velvet', 'Cosmic', 'Gilded', 'Moonlit', 'Fizzy', 'Sunny', 'Dreamy', 'Crimson', 'Misty',
+  'Jolly', 'Sparkly', 'Breezy', 'Lucky', 'Wild', 'Cozy', 'Golden', 'Silver', 'Starry', 'Bubbly',
+  'Dapper', 'Nimble', 'Mellow', 'Zesty', 'Twinkly', 'Peachy', 'Frosty', 'Radiant', 'Sleepy',
+  'Brave', 'Witty', 'Gentle', 'Electric', 'Secret', 'Hidden', 'Quiet', 'Merry', 'Plucky',
+  'Lunar', 'Solar', 'Amber', 'Ivory', 'Emerald', 'Sapphire', 'Coral', 'Rosy', 'Minty',
+];
+const NAME_NOUNS = [
+  'Comet', 'Pickle', 'Lantern', 'Nebula', 'Muffin', 'Otter', 'Pebble', 'Meadow', 'Sprout',
+  'Biscuit', 'Firefly', 'Marble', 'Teacup', 'Willow', 'Falcon', 'Mango', 'Thimble', 'Breeze',
+  'Doodle', 'Pancake', 'Harbor', 'Raven', 'Clover', 'Tulip', 'Echo', 'Penguin', 'Saturn',
+  'Waffle', 'Orbit', 'Badger', 'Cupcake', 'Riddle', 'Bloom', 'Ember', 'Quill', 'Galaxy',
+  'Noodle', 'Puffin', 'Pinecone', 'Rocket', 'Sonnet', 'Compass', 'Koala', 'Maple', 'Jellybean',
+];
+const pickWord = (list) => list[Math.floor(Math.random() * list.length)];
+
+function fancyName() {
+  const taken = new Set(data.notes.map((n) => n.title));
+  for (let i = 0; i < 50; i++) {
+    const name = `${pickWord(NAME_ADJECTIVES)} ${pickWord(NAME_NOUNS)}`;
+    if (!taken.has(name)) return name;
+  }
+  return `${pickWord(NAME_ADJECTIVES)} ${pickWord(NAME_NOUNS)} ${data.nextNumber}`;
+}
+
 function create(fields) {
-  const note = normalize({ title: `Note ${data.nextNumber++}`, ...fields });
+  const note = normalize({ title: fancyName(), ...fields });
+  data.nextNumber++;
   data.notes.push(note);
   save();
   return note;
