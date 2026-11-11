@@ -39,17 +39,6 @@ Type, draw, tick things off. The eyes follow your mouse around.
 - **Private by design.** No account, no cloud, no network calls. Notes are a single
   JSON file on your computer.
 
-<table>
-  <tr>
-    <td width="60%" valign="top"><img src="docs/images/customize.png" alt="Customize panel docked beside a note"></td>
-    <td width="40%" valign="top"><img src="docs/images/menu.png" alt="Toonii right-click menu"></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Customize panel (palette button or <kbd>Ctrl</kbd>+<kbd>E</kbd>)</sub></td>
-    <td align="center"><sub>Right-click menu</sub></td>
-  </tr>
-</table>
-
 ## Download
 
 Get the latest Windows build from [**Releases**](../../releases/latest):
