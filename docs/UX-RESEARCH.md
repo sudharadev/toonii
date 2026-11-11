@@ -36,8 +36,16 @@ app window (OneNote, Notion) or look dated and fiddly.
   to *Recently closed* in the tray menu. Empty notes are just discarded.
 - **Native feel per OS.** Right-click menu includes cut/copy/paste + spellcheck; macOS gets a
   real Edit menu so ⌘C/⌘V work; shortcuts use Ctrl on Windows, ⌘ on macOS.
-- **No rotation.** The reference tilts notes; we keep them straight because rotated text is
-  blurrier and harder to hit-target. Depth comes from soft shadows instead.
+- **Optional tilt.** Notes start straight (rotated text is slightly softer), but users can tilt
+  ±5° from the style popover or right-click → Tilt for the playful look in the reference.
+  Window dragging is handled in code, not CSS drag regions, so rotated notes still drag
+  and click precisely.
+- **Format on selection.** Selecting text shows a floating toolbar (font, size −/+, bold,
+  italic, underline, strikethrough, bullets, clear). Sizes are relative to the note's auto-fit
+  size so formatting and auto-fit never fight. Paste is always plain text.
+- **One icon language.** All icons share a 24px grid with 2px rounded strokes.
+- **Erase like paper.** Draw mode has a tool pill: pen, eraser (pixel eraser, undoable),
+  undo, clear. A stylus's eraser end erases automatically.
 
 ## 5. Interaction spec
 

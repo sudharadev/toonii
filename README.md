@@ -25,7 +25,12 @@ npm run dist:mac   # DMG in dist/             (run on a Mac)
 | New note (in a note) | Ctrl+N | ⌘N |
 | Draw / Type | Ctrl+D | ⌘D |
 | Undo stroke (Draw mode) | Ctrl+Z | ⌘Z |
+| Pen / Eraser (Draw mode) | P / E | P / E |
+| Bold / Italic / Underline | Ctrl+B / I / U | ⌘B / I / U |
 | Close note | Ctrl+W | ⌘W |
+
+Select text to get the format toolbar (font, size, bold, italic, underline, strike, bullets).
+Tilt a note with the palette button → slider, or right-click → Tilt.
 
 Closed notes with content can be restored from the tray menu → **Recently closed**.
 

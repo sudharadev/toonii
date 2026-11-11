@@ -18,6 +18,8 @@ function normalize(n) {
     color: n.color || 'yellow',
     mode: n.mode === 'draw' ? 'draw' : 'type',
     text: typeof n.text === 'string' ? n.text : '',
+    html: typeof n.html === 'string' ? n.html : null, // null = legacy plain-text note
+    tilt: Number.isFinite(n.tilt) ? n.tilt : 0,
     strokes: Array.isArray(n.strokes) ? n.strokes : [],
     pinned: !!n.pinned,
     bounds: n.bounds || null,

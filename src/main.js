@@ -7,8 +7,10 @@ const store = require('./store');
 
 const isMac = process.platform === 'darwin';
 // Window sizes include an 18px transparent gutter on each side for the drop shadow.
-const DEFAULT_SIZE = { width: 316, height: 256 };
-const MIN_SIZE = { width: 216, height: 150 };
+// Min width leaves room for the floating text-format toolbar.
+const DEFAULT_SIZE = { width: 340, height: 270 };
+const MIN_SIZE = { width: 300, height: 170 };
+const MAX_TILT = 5;
 const COLORS = [
   ['yellow', 'Yellow'], ['blue', 'Blue'], ['green', 'Green'],
   ['pink', 'Pink'], ['purple', 'Purple'], ['gray', 'Gray'],
@@ -31,6 +33,8 @@ function debounce(fn, ms) {
 
 function ensureOnScreen(bounds) {
   const b = { ...DEFAULT_SIZE, ...(bounds || {}) };
+  b.width = Math.max(MIN_SIZE.width, b.width);
+  b.height = Math.max(MIN_SIZE.height, b.height);
   const cx = b.x + b.width / 2;
   const cy = b.y + 24;
   const visible = screen.getAllDisplays().some(({ workArea: a }) =>
@@ -75,7 +79,7 @@ function raise(win, note) {
 
 function openWindow(note, { focus = false } = {}) {
   const bounds = ensureOnScreen(note.bounds);
-  if (!note.bounds || bounds.x !== note.bounds.x || bounds.y !== note.bounds.y) {
+  if (!note.bounds || ['x', 'y', 'width', 'height'].some((k) => bounds[k] !== note.bounds[k])) {
     store.update(note.id, { bounds }, { touch: false });
   }
 
@@ -222,6 +226,13 @@ function noteMenuItems(win) {
       })),
     },
     {
+      label: 'Tilt',
+      submenu: [['Left', -3], ['Straight', 0], ['Right', 3]].map(([label, tilt]) => ({
+        label, type: 'radio', checked: note.tilt === tilt,
+        click: () => setNoteProps(note.id, { tilt }),
+      })),
+    },
+    {
       label: 'Keep on top', type: 'checkbox', checked: note.pinned,
       click: () => setNoteProps(note.id, { pinned: !note.pinned }),
     },
@@ -355,6 +366,8 @@ function sanitize(patch) {
   if (!patch || typeof patch !== 'object') return out;
   if (typeof patch.title === 'string') out.title = patch.title.slice(0, 80);
   if (typeof patch.text === 'string') out.text = patch.text.slice(0, 200000);
+  if (typeof patch.html === 'string' && patch.html.length <= 1000000) out.html = patch.html;
+  if (Number.isFinite(patch.tilt)) out.tilt = clamp(Math.round(patch.tilt * 2) / 2, -MAX_TILT, MAX_TILT);
   if (Array.isArray(patch.strokes)) out.strokes = patch.strokes.slice(0, 5000);
   if (patch.mode === 'type' || patch.mode === 'draw') out.mode = patch.mode;
   if (COLOR_IDS.includes(patch.color)) out.color = patch.color;
@@ -395,6 +408,13 @@ ipcMain.on('note:resize', (event, width, height) => {
     width: Math.max(MIN_SIZE.width, Math.round(width)),
     height: Math.max(MIN_SIZE.height, Math.round(height)),
   });
+});
+
+// Manual window drag (CSS drag regions misbehave on rotated notes).
+ipcMain.on('note:move', (event, x, y) => {
+  const { win } = noteFor(event);
+  if (!win || !Number.isFinite(x) || !Number.isFinite(y)) return;
+  win.setPosition(Math.round(x), Math.round(y));
 });
 
 ipcMain.on('note:passthrough', (event, ignore) => {
