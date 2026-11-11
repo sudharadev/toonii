@@ -11,4 +11,6 @@ contextBridge.exposeInMainWorld('sticky', {
   setPassthrough: (ignore) => ipcRenderer.send('note:passthrough', ignore),
   onChanged: (cb) => ipcRenderer.on('note:changed', (_e, patch) => cb(patch)),
   onFocus: (cb) => ipcRenderer.on('note:focus', () => cb()),
+  setTheme: (theme) => ipcRenderer.send('app:set-theme', theme),
+  onTheme: (cb) => ipcRenderer.on('app:theme', (_e, theme) => cb(theme)),
 });

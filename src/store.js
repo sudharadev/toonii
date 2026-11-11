@@ -9,7 +9,7 @@ const SAVE_DELAY_MS = 250;
 
 let file = null;
 let timer = null;
-let data = { version: 1, nextNumber: 1, notes: [], trash: [] };
+let data = { version: 1, nextNumber: 1, notes: [], trash: [], settings: {} };
 
 function normalize(n) {
   return {
@@ -37,6 +37,7 @@ function load(dir) {
       nextNumber: Number(parsed.nextNumber) || 1,
       notes: (parsed.notes || []).map(normalize),
       trash: (parsed.trash || []).map(normalize),
+      settings: parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : {},
     };
   } catch (err) {
     if (err.code !== 'ENOENT') {
@@ -111,4 +112,13 @@ function emptyTrash() {
   save();
 }
 
-module.exports = { load, flush, all, get, trash, create, update, discard, restore, emptyTrash };
+const getSetting = (key, fallback) => (key in data.settings ? data.settings[key] : fallback);
+
+function setSetting(key, value) {
+  data.settings[key] = value;
+  save();
+}
+
+module.exports = {
+  load, flush, all, get, trash, create, update, discard, restore, emptyTrash, getSetting, setSetting,
+};

@@ -33,6 +33,7 @@
 
   <div class="note" id="note" data-color="yellow" data-mode="type">
     <header class="bar" id="bar">
+      <span class="dot" aria-hidden="true"></span>
       <input class="title" id="title" spellcheck="false" maxlength="80" aria-label="Note title">
       <div class="tools">
         <button class="icon on-hover" id="styleBtn" title="Color & tilt" aria-label="Color and tilt"><svg class="i"><use href="#i-palette"/></svg></button>
@@ -47,6 +48,14 @@
     </header>
 
     <div class="pop style-pop" id="stylePop" hidden>
+      <div class="pop-label">Style · all notes</div>
+      <div class="themes" id="themes" role="radiogroup" aria-label="Style for all notes">
+        <button data-theme-id="aura" role="radio"><i class="tp tp-aura"></i>Aura</button>
+        <button data-theme-id="minimal" role="radio"><i class="tp tp-minimal"></i>Minimal</button>
+        <button data-theme-id="midnight" role="radio"><i class="tp tp-midnight"></i>Midnight</button>
+        <button data-theme-id="classic" role="radio"><i class="tp tp-classic"></i>Classic</button>
+      </div>
+      <div class="pop-label">Color</div>
       <div class="swatches" role="radiogroup" aria-label="Color">
         <button data-color="yellow" title="Yellow" role="radio"></button>
         <button data-color="blue" title="Blue" role="radio"></button>
@@ -55,6 +64,7 @@
         <button data-color="purple" title="Purple" role="radio"></button>
         <button data-color="gray" title="Gray" role="radio"></button>
       </div>
+      <div class="pop-label">Tilt</div>
       <div class="tilt-row">
         <svg class="i"><use href="#i-rotate"/></svg>
         <input type="range" id="tilt" min="-5" max="5" step="0.5" value="0" aria-label="Tilt">

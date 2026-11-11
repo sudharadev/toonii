@@ -16,6 +16,12 @@ const COLORS = [
   ['pink', 'Pink'], ['purple', 'Purple'], ['gray', 'Gray'],
 ];
 const COLOR_IDS = COLORS.map(([id]) => id);
+const THEMES = [['aura', 'Aura'], ['minimal', 'Minimal'], ['midnight', 'Midnight'], ['classic', 'Classic']];
+const THEME_IDS = THEMES.map(([id]) => id);
+const currentTheme = () => {
+  const t = store.getSetting('theme', 'aura');
+  return THEME_IDS.includes(t) ? t : 'aura';
+};
 const SHORTCUTS = { newNote: 'CommandOrControl+Alt+N', toggleAll: 'CommandOrControl+Alt+H' };
 
 const windows = new Map(); // note id -> BrowserWindow
@@ -104,6 +110,7 @@ function openWindow(note, { focus = false } = {}) {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: true,
+      backgroundThrottling: false, // keep layout/fit work running while hidden or occluded
     },
   });
   win.noteId = note.id;
@@ -179,6 +186,13 @@ function setNoteProps(id, patch) {
   if (!note || !win || win.isDestroyed()) return;
   if ('pinned' in patch) setOnTop(win, note.pinned);
   win.webContents.send('note:changed', patch);
+}
+
+function setTheme(theme) {
+  if (!THEME_IDS.includes(theme)) return;
+  store.setSetting('theme', theme);
+  windows.forEach((w) => { if (!w.isDestroyed()) w.webContents.send('app:theme', theme); });
+  refreshTray();
 }
 
 function anyVisible() {
@@ -294,6 +308,12 @@ function refreshTray() {
       label: anyVisible() ? 'Hide all notes' : 'Show all notes',
       accelerator: SHORTCUTS.toggleAll, registerAccelerator: false, click: toggleAll,
     },
+    {
+      label: 'Style',
+      submenu: THEMES.map(([id, label]) => ({
+        label, type: 'radio', checked: currentTheme() === id, click: () => setTheme(id),
+      })),
+    },
     { type: 'separator' },
     { label: 'Recently closed', submenu: recent },
     { type: 'separator' },
@@ -377,8 +397,10 @@ function sanitize(patch) {
 
 ipcMain.handle('note:init', (event) => {
   const { note } = noteFor(event);
-  return { note, platform: process.platform };
+  return { note, platform: process.platform, theme: currentTheme() };
 });
+
+ipcMain.on('app:set-theme', (_event, theme) => setTheme(theme));
 
 ipcMain.on('note:update', (event, patch) => {
   const { win, note } = noteFor(event);

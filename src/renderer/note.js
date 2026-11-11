@@ -149,6 +149,25 @@ function applyColor() {
   queueRedraw(); // ink follows the note color
 }
 
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  for (const b of $('themes').querySelectorAll('[data-theme-id]')) {
+    b.setAttribute('aria-checked', String(b.dataset.themeId === theme));
+  }
+  queueRedraw(); // pen color depends on the style
+  if (note) queueFit();
+}
+
+$('themes').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-theme-id]');
+  if (!b) return;
+  applyTheme(b.dataset.themeId);
+  api.setTheme(b.dataset.themeId);
+});
+api.onTheme(applyTheme);
+// Minimal follows system dark mode; redraw ink when it flips.
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', queueRedraw);
+
 function applyPinned() {
   pinBtn.setAttribute('aria-pressed', String(note.pinned));
   pinBtn.title = note.pinned ? 'Stop keeping on top' : 'Keep on top';
@@ -188,7 +207,7 @@ function fitText() {
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
     editor.style.setProperty('--base', `${mid}px`);
-    if (editor.scrollHeight <= editor.clientHeight + 1) lo = mid; else hi = mid - 1;
+    if (editor.scrollHeight <= editor.clientHeight) lo = mid; else hi = mid - 1;
   }
   editor.style.setProperty('--base', `${lo}px`);
   if (!format.hidden) positionFormat();
@@ -197,7 +216,8 @@ function fitText() {
 function queueFit() {
   if (fitQueued) return;
   fitQueued = true;
-  requestAnimationFrame(fitText);
+  // A timer, not rAF: rAF is paused while the window is still hidden at startup.
+  setTimeout(fitText, 0);
 }
 
 // ---------- drawing ----------
@@ -232,7 +252,7 @@ function drawStroke(s) {
 
 function redraw() {
   redrawQueued = false;
-  const ink = getComputedStyle(noteEl).getPropertyValue('--ink').trim() || '#000';
+  const ink = getComputedStyle(noteEl).getPropertyValue('--pen').trim() || '#000';
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -609,6 +629,8 @@ grip.addEventListener('pointercancel', endResize);
 
 // Fonts like Marker load lazily and change text metrics; refit when they arrive.
 document.fonts.addEventListener('loadingdone', () => { if (note) queueFit(); });
+// Any change to the editor's box (window size, tilt, header height per style) needs a refit.
+new ResizeObserver(() => { if (note) queueFit(); }).observe(editor);
 
 window.addEventListener('resize', () => {
   if (!note) return;
@@ -658,9 +680,10 @@ api.onFocus(focusText);
 
 // ---------- boot ----------
 
-api.init().then(({ note: n, platform }) => {
+api.init().then(({ note: n, platform, theme }) => {
   if (!n) return;
   note = n;
+  applyTheme(theme);
   isMac = platform === 'darwin';
   document.documentElement.dataset.platform = platform;
   strokes = note.strokes;

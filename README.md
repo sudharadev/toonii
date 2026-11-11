@@ -29,6 +29,8 @@ npm run dist:mac   # DMG in dist/             (run on a Mac)
 | Bold / Italic / Underline | Ctrl+B / I / U | ⌘B / I / U |
 | Close note | Ctrl+W | ⌘W |
 
+Four styles for all notes: Aura (default), Minimal, Midnight, Classic. Pick one in the palette popover or tray → Style.
+
 Select text to get the format toolbar (font, size, bold, italic, underline, strike, bullets).
 Tilt a note with the palette button → slider, or right-click → Tilt.
 

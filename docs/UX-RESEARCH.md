@@ -62,7 +62,21 @@ app window (OneNote, Notion) or look dated and fiddly.
 | Close note | × · `Ctrl+W` |
 | Restore closed note | Tray → Recently closed |
 
-## 6. Visual tokens
+## 6. Styles
+
+The paper-sticky look reads as dated. Modern styles treat color as an *accent* and keep
+text neutral for readability. One global style keeps the desktop coherent.
+
+| Style | Look |
+|---|---|
+| **Aura** (default) | Soft pastel gradient, color glow top-right, white glass edge, neutral text |
+| **Minimal** | Near-white card, color dot + faint tint; follows system dark mode |
+| **Midnight** | Dark card with the note color glowing from the corner |
+| **Classic** | Original paper sticky |
+
+Switch in the palette popover ("Style · all notes") or tray → Style.
+
+## 7. Visual tokens
 
 | Color | Background | Ink |
 |---|---|---|
@@ -75,7 +89,7 @@ app window (OneNote, Notion) or look dated and fiddly.
 
 Radius 10 px · title 15 px semibold · body auto-fit 14–36 px · chip 12 px pill on 14 % ink.
 
-## 7. Later (backlog)
+## 8. Later (backlog)
 
 - Cloud sync between Windows and Mac.
 - Reminders / due time on a note.
