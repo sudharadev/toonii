@@ -201,10 +201,12 @@ body.dragging .bar { cursor: grabbing; }
 }
 
 .title {
-  field-sizing: content;
+  /* Wraps onto more lines instead of cutting the name off; the bar grows to fit. */
   flex: 0 1 auto;
   min-width: 3ch;
   max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   padding: 2px 4px;
   margin-left: -2px;
   border: 0;
@@ -217,7 +219,6 @@ body.dragging .bar { cursor: grabbing; }
   letter-spacing: -.005em;
   line-height: 1.2;
   outline: none;
-  text-overflow: ellipsis;
   cursor: text;
 }
 :root[data-theme="classic"] .title { color: var(--ui); font-size: 15px; }
@@ -582,6 +583,18 @@ canvas {
 .colors [data-tc].active { box-shadow: 0 0 0 2px var(--pop-bg), 0 0 0 3.5px var(--pop-text); }
 .colors .grow { flex: 1; }
 
+/* ---------- resize: every edge and corner, the corner grip is the visible one ---------- */
+.edge:not(.grip) { position: absolute; z-index: 5; }
+.edge[data-edge="0,-1"] { top: -5px; left: 14px; right: 14px; height: 9px; cursor: ns-resize; }
+.edge[data-edge="0,1"]  { bottom: -5px; left: 14px; right: 14px; height: 9px; cursor: ns-resize; }
+.edge[data-edge="-1,0"] { left: -5px; top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+.edge[data-edge="1,0"]  { right: -5px; top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+.edge[data-edge="-1,-1"] { left: -5px; top: -5px; width: 16px; height: 16px; cursor: nwse-resize; }
+.edge[data-edge="1,-1"]  { right: -5px; top: -5px; width: 16px; height: 16px; cursor: nesw-resize; }
+.edge[data-edge="-1,1"]  { left: -5px; bottom: -5px; width: 16px; height: 16px; cursor: nesw-resize; }
+body.resizing .note { transition: none; }
+body.resizing, body.resizing * { user-select: none; }
+
 /* ---------- resize grip ---------- */
 .grip {
   position: absolute;
@@ -896,6 +909,24 @@ canvas {
   animation: pop .12s ease-out;
 }
 .tilt-badge[hidden] { display: none; }
+
+.saved-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 6;
+  translate: -50% 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--pop-text);
+  color: var(--pop-bg);
+  font: 600 12px/1.4 var(--font-sans);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: pop .12s ease-out;
+}
+.saved-badge[hidden] { display: none; }
+:root[data-theme="toon"] .saved-badge { background: #fff; color: #17171c; box-shadow: 0 0 0 2px #17171c, 2px 2px 0 2px #17171c; }
 :root[data-theme="toon"] .tilt-badge { background: #fff; color: #17171c; box-shadow: 0 0 0 2px #17171c, 2px 2px 0 2px #17171c; }
 
 /* =====================================================================
@@ -943,6 +974,17 @@ canvas {
   color: color-mix(in srgb, var(--pop-text) 62%, transparent);
 }
 .panel h3 .hint, .panel h3 output { text-transform: none; letter-spacing: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+.panel .credit {
+  margin: -2px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--pop-soft);
+  font-size: 11px;
+  text-align: center;
+  color: color-mix(in srgb, var(--pop-text) 58%, transparent);
+}
+.panel .credit .heart { display: inline-block; color: #FF5C8A; animation: beat 1.6s ease-in-out infinite; }
+@keyframes beat { 0%, 40%, 100% { scale: 1; } 20% { scale: 1.25; } }
+@media (prefers-reduced-motion: reduce) { .panel .credit .heart { animation: none; } }
 .panel .tip { margin: 0; font-size: 11px; line-height: 1.35; color: color-mix(in srgb, var(--pop-text) 58%, transparent); }
 
 /* style cards */

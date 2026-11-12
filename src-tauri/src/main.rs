@@ -19,13 +19,16 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 const APP_NAME: &str = "Toonii";
 const DATA_DIR: &str = "Toonii"; // %APPDATA%\Toonii or ~/Library/Application Support/Toonii
 const LEGACY_DATA_DIRS: [&str; 2] = ["Stickynotee", "stickynotee"];
 const DEFAULT_SIZE: (f64, f64) = (340.0, 270.0);
-const MIN_SIZE: (f64, f64) = (300.0, 170.0);
+const MIN_SIZE: (f64, f64) = (200.0, 140.0);
+const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 const MENU_PAD: f64 = 10.0; // transparent room around the menu card; mirrors --pad in menu.css
 const MENU_LABEL: &str = "menu";
 const NOTE_PREFIX: &str = "note-";
@@ -56,6 +59,8 @@ enum Action {
     Tilt,
     Pin,
     ClearInk,
+    Save,
+    Update,
     New,
     Close,
 }
@@ -74,11 +79,22 @@ struct Drag {
     last_x: f64,
 }
 
+/// An edge or corner resize in progress, in physical px. `edge` is -1/0/1 per axis
+/// (left/none/right, top/none/bottom).
+struct Resize {
+    cursor: (f64, f64),
+    pos: (i32, i32),
+    size: (f64, f64),
+    edge: (i8, i8),
+    min: (f64, f64),
+}
+
 struct Inner {
     store: Store,
     stages: HashMap<String, Stage>,
     focus_pending: HashSet<String>,
     drags: HashMap<String, Drag>,
+    resizes: HashMap<String, Resize>,
     notes_hidden: bool,
     menu: Option<MenuState>,
 }
@@ -365,6 +381,112 @@ fn restore_note(app: &AppHandle, id: &str) {
     refresh_tray(app);
 }
 
+fn open_saved(app: &AppHandle, id: &str) {
+    let st = state(app);
+    let note = {
+        let mut inner = st.lock();
+        inner.notes_hidden = false;
+        inner.store.from_library(id)
+    };
+    if let Some(note) = note {
+        st.touch();
+        open_window(app, &note, true);
+    }
+}
+
+fn save_note(app: &AppHandle, id: &str) {
+    let st = state(app);
+    let saved = st.lock().store.save_to_library(id);
+    if saved {
+        st.touch();
+        if let Some(w) = note_window(app, id) {
+            let _ = app.emit_to(w.label(), "note:saved", ());
+        }
+        refresh_tray(app);
+    }
+}
+
+// ---------- updates ----------
+// Releases on GitHub carry a signed latest.json (see scripts/make-latest-json.js). A check
+// runs shortly after launch and every few hours; "Check for updates…" runs one on demand and
+// is the only kind that reports "up to date" or errors.
+
+static UPDATE_BUSY: AtomicBool = AtomicBool::new(false);
+
+fn check_for_updates(app: &AppHandle, manual: bool) {
+    if UPDATE_BUSY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let found = match app.updater() {
+            Ok(u) => u.check().await,
+            Err(e) => Err(e),
+        };
+        match found {
+            Ok(Some(update)) => offer_update(&app, update),
+            Ok(None) => {
+                UPDATE_BUSY.store(false, Ordering::SeqCst);
+                if manual {
+                    let v = app.package_info().version.to_string();
+                    notify(&app, MessageDialogKind::Info, "You're up to date", &format!("{APP_NAME} {v} is the latest version."));
+                }
+            }
+            Err(e) => {
+                UPDATE_BUSY.store(false, Ordering::SeqCst);
+                if manual {
+                    notify(&app, MessageDialogKind::Warning, "Couldn't check for updates", &format!("{e}\n\nCheck your connection and try again."));
+                }
+            }
+        }
+    });
+}
+
+fn offer_update(app: &AppHandle, update: Update) {
+    let now = app.package_info().version.to_string();
+    let notes = update.body.as_deref().map(str::trim).filter(|b| !b.is_empty()).map(|b| format!("\n\n{b}")).unwrap_or_default();
+    let handle = app.clone();
+    app.dialog()
+        .message(format!("{APP_NAME} {} is out (you have {now}).{notes}\n\nInstall it now? {APP_NAME} restarts and your notes stay put.", update.version))
+        .title("Update available")
+        .buttons(MessageDialogButtons::OkCancelCustom("Install & restart".into(), "Later".into()))
+        .show(move |yes| {
+            if !yes {
+                UPDATE_BUSY.store(false, Ordering::SeqCst);
+                return;
+            }
+            tauri::async_runtime::spawn(async move {
+                match update.download_and_install(|_, _| {}, || {}).await {
+                    Ok(()) => {
+                        state(&handle).lock().store.save_now();
+                        handle.restart();
+                    }
+                    Err(e) => {
+                        UPDATE_BUSY.store(false, Ordering::SeqCst);
+                        notify(&handle, MessageDialogKind::Error, "Update failed", &format!("{e}"));
+                    }
+                }
+            });
+        });
+}
+
+fn notify(app: &AppHandle, kind: MessageDialogKind, title: &str, text: &str) {
+    app.dialog().message(text).title(title).kind(kind).buttons(MessageDialogButtons::Ok).show(|_| {});
+}
+
+fn spawn_update_checks(app: AppHandle) {
+    if cfg!(debug_assertions) {
+        return; // dev builds are never "behind" a release
+    }
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(8));
+        loop {
+            check_for_updates(&app, false);
+            thread::sleep(UPDATE_EVERY);
+        }
+    });
+}
+
 /// Apply a change made from main-process UI (menus) and tell the page.
 fn set_note_props(app: &AppHandle, id: &str, patch: Value) {
     let st = state(app);
@@ -492,6 +614,9 @@ fn build_menu(note: &Note, ctx: &MenuContext, can_paste: bool) -> (Value, HashMa
     add(sep(), None);
     add(json!({ "id": "pin", "label": "Keep on top", "icon": "pin", "toggle": true, "checked": note.pinned }), Some(Action::Pin));
     add(json!({ "id": "clearInk", "label": "Clear drawing", "icon": "trash", "enabled": !note.strokes.is_empty() }), Some(Action::ClearInk));
+    add(json!({ "id": "save", "label": "Save to library", "icon": "bookmark", "hint": format!("{m}S") }), Some(Action::Save));
+    add(sep(), None);
+    add(json!({ "id": "update", "label": "Check for updates…", "icon": "refresh" }), Some(Action::Update));
     add(sep(), None);
     add(json!({ "id": "new", "label": "New note", "icon": "plus", "hint": format!("{m}N") }), Some(Action::New));
     add(json!({ "id": "close", "label": "Close note", "icon": "x", "hint": format!("{m}W"), "danger": true }), Some(Action::Close));
@@ -563,6 +688,23 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         recent.push(Box::new(MenuItem::with_id(app, "clear-trash", "Clear list", true, None::<&str>)?));
     }
     let recent_refs: Vec<&dyn IsMenuItem<Wry>> = recent.iter().map(|b| b.as_ref()).collect();
+    let library: Vec<(String, String)> = state(app).lock().store.library().iter().map(|n| (n.id.clone(), describe(n))).collect();
+    let mut saved: Vec<Box<dyn IsMenuItem<Wry>>> = Vec::new();
+    if library.is_empty() {
+        saved.push(Box::new(MenuItem::with_id(app, "none", "Right-click a note → Save to library", false, None::<&str>)?));
+    } else {
+        for (id, label) in &library {
+            saved.push(Box::new(MenuItem::with_id(app, format!("open:{id}"), label, true, None::<&str>)?));
+        }
+        let mut remove: Vec<Box<dyn IsMenuItem<Wry>>> = Vec::new();
+        for (id, label) in &library {
+            remove.push(Box::new(MenuItem::with_id(app, format!("unsave:{id}"), label, true, None::<&str>)?));
+        }
+        let remove_refs: Vec<&dyn IsMenuItem<Wry>> = remove.iter().map(|b| b.as_ref()).collect();
+        saved.push(Box::new(PredefinedMenuItem::separator(app)?));
+        saved.push(Box::new(Submenu::with_items(app, "Remove from library", true, &remove_refs)?));
+    }
+    let saved_refs: Vec<&dyn IsMenuItem<Wry>> = saved.iter().map(|b| b.as_ref()).collect();
     let toggle_label = if any_visible(app) { "Hide all notes" } else { "Show all notes" };
     let autostart = app.autolaunch().is_enabled().unwrap_or(false);
     Menu::with_items(
@@ -571,9 +713,11 @@ fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &MenuItem::with_id(app, "new", "New note", true, Some("CmdOrCtrl+Alt+N"))?,
             &MenuItem::with_id(app, "toggle", toggle_label, true, Some("CmdOrCtrl+Alt+H"))?,
             &PredefinedMenuItem::separator(app)?,
+            &Submenu::with_items(app, "Saved notes", true, &saved_refs)?,
             &Submenu::with_items(app, "Recently closed", true, &recent_refs)?,
             &PredefinedMenuItem::separator(app)?,
             &CheckMenuItem::with_id(app, "autostart", "Open at login", true, autostart, None::<&str>)?,
+            &MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?,
             &MenuItem::with_id(app, "quit", format!("Quit {APP_NAME}"), true, None::<&str>)?,
         ],
     )
@@ -600,10 +744,17 @@ fn on_tray_menu(app: &AppHandle, id: &str) {
             let _ = if al.is_enabled().unwrap_or(false) { al.disable() } else { al.enable() };
             refresh_tray(app);
         }
+        "update" => check_for_updates(app, true),
         "quit" => app.exit(0),
         other => {
             if let Some(nid) = other.strip_prefix("restore:") {
                 restore_note(app, nid);
+            } else if let Some(sid) = other.strip_prefix("open:") {
+                open_saved(app, sid);
+            } else if let Some(sid) = other.strip_prefix("unsave:") {
+                state(app).lock().store.remove_from_library(sid);
+                state(app).touch();
+                refresh_tray(app);
             }
         }
     }
@@ -680,15 +831,49 @@ async fn note_new(window: WebviewWindow, app: AppHandle) {
     create_note(&app, Some(&window), "");
 }
 
+/// Resize from any edge or corner, following the OS cursor (like the drag, because page
+/// screen coordinates differ between WebView2 and WebKit). `dx`/`dy` pick the edge: -1, 0, 1.
 #[tauri::command]
-fn note_resize(window: WebviewWindow, st: State<'_, AppState>, width: f64, height: f64) {
-    if !width.is_finite() || !height.is_finite() {
+fn note_resize_start(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>, dx: i8, dy: i8) {
+    let (Ok(c), Ok(p), Ok(z), Ok(s)) = (app.cursor_position(), window.outer_position(), window.outer_size(), window.scale_factor()) else {
         return;
+    };
+    let mut inner = st.lock();
+    let g = inner.stages.get(window.label()).copied().unwrap_or_default();
+    let min = ((MIN_SIZE.0 + g.left + g.right) * s, (MIN_SIZE.1 + g.top + g.bottom) * s);
+    let r = Resize { cursor: (c.x, c.y), pos: (p.x, p.y), size: (z.width as f64, z.height as f64), edge: (dx.signum(), dy.signum()), min };
+    inner.resizes.insert(window.label().to_string(), r);
+}
+
+#[tauri::command]
+fn note_resize_move(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>) {
+    let Ok(c) = app.cursor_position() else { return };
+    let (pos, size) = {
+        let inner = st.lock();
+        let Some(r) = inner.resizes.get(window.label()) else { return };
+        // One axis: the new length, and how far the window's origin moves for a left/top edge.
+        let axis = |edge: i8, delta: f64, len: f64, min: f64| -> (f64, f64) {
+            let l = (len + delta * edge as f64).max(min).round();
+            (l, if edge < 0 { len - l } else { 0.0 })
+        };
+        let (w, sx) = axis(r.edge.0, c.x - r.cursor.0, r.size.0, r.min.0);
+        let (h, sy) = axis(r.edge.1, c.y - r.cursor.1, r.size.1, r.min.1);
+        (PhysicalPosition::new(r.pos.0 + sx as i32, r.pos.1 + sy as i32), tauri::PhysicalSize::new(w as u32, h as u32))
+    };
+    let _ = window.set_size(size);
+    let _ = window.set_position(pos);
+}
+
+#[tauri::command]
+fn note_resize_end(window: WebviewWindow, st: State<'_, AppState>) {
+    st.lock().resizes.remove(window.label());
+}
+
+#[tauri::command]
+async fn note_save(window: WebviewWindow, app: AppHandle) {
+    if let Some(id) = note_id(&window) {
+        save_note(&app, &id);
     }
-    let s = st.lock().stages.get(window.label()).copied().unwrap_or_default();
-    let w = width.round().max(MIN_SIZE.0 + s.left + s.right);
-    let h = height.round().max(MIN_SIZE.1 + s.top + s.bottom);
-    let _ = window.set_size(LogicalSize::new(w, h));
 }
 
 /// Resize around the window's center (rotating keeps the card in place).
@@ -858,6 +1043,8 @@ async fn menu_pick(app: AppHandle, id: String, value: Option<Value>) {
             set_note_props(&app, &nid, json!({ "pinned": !pinned }));
         }
         Action::ClearInk => set_note_props(&app, &nid, json!({ "strokes": [] })),
+        Action::Save => save_note(&app, &nid),
+        Action::Update => check_for_updates(&app, true),
         Action::New => create_note(&app, Some(&win), ""),
         Action::Close => close_note(&app, &nid),
     }
@@ -939,6 +1126,8 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_all(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
@@ -968,6 +1157,7 @@ fn main() {
                     stages: HashMap::new(),
                     focus_pending: HashSet::new(),
                     drags: HashMap::new(),
+                    resizes: HashMap::new(),
                     notes_hidden: false,
                     menu: None,
                 }),
@@ -996,6 +1186,7 @@ fn main() {
 
             spawn_saver(handle.clone());
             spawn_cursor_feed(handle.clone());
+            spawn_update_checks(handle.clone());
 
             let notes: Vec<Note> = state(&handle).lock().store.all().to_vec();
             if notes.is_empty() {
@@ -1040,6 +1231,7 @@ fn main() {
                     inner.stages.remove(&label);
                     inner.focus_pending.remove(&label);
                     inner.drags.remove(&label);
+                    inner.resizes.remove(&label);
                 }
                 _ => {}
             }
@@ -1050,8 +1242,11 @@ fn main() {
             note_update,
             note_close,
             note_new,
-            note_resize,
+            note_resize_start,
+            note_resize_move,
+            note_resize_end,
             note_resize_centered,
+            note_save,
             note_drag_start,
             note_drag_move,
             note_drag_end,

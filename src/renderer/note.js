@@ -839,7 +839,7 @@ function closeNote() {
 // ---------- rotation: slider, menu, or hold the top bar (or Alt) and scroll ----------
 
 const MAX_TILT = 15;
-const WIN_MIN = { width: 300, height: 170 }; // mirrors MIN_SIZE in main.js
+const WIN_MIN = { width: 200, height: 140 }; // mirrors MIN_SIZE in main.rs
 let tiltGesture = null;
 let tiltSaveTimer = null;
 let badgeTimer = null;
@@ -976,30 +976,36 @@ stylePop.addEventListener('click', (e) => {
 tiltInput.addEventListener('input', () => rotateTo(Number(tiltInput.value)));
 $('tiltReset').addEventListener('click', () => rotateTo(0));
 
-// The title input sizes to its text with CSS field-sizing; older Safari WebKit lacks it.
-const fitTitle = CSS.supports('field-sizing', 'content') ? () => {} : () => {
-  const ctx = (fitTitle.ctx ||= document.createElement('canvas').getContext('2d'));
-  const cs = getComputedStyle(titleEl);
-  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-  const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 2;
-  titleEl.style.width = `${Math.ceil(ctx.measureText(titleEl.value || ' ').width + pad)}px`;
-};
+// The title is editable text that wraps, so a long name shows in full instead of being cut off.
+const TITLE_MAX = 80;
+const titleText = () => titleEl.textContent.replace(/\s+/g, ' ').trim();
 titleEl.addEventListener('input', () => {
-  fitTitle();
+  if (titleEl.textContent.length > TITLE_MAX) {
+    titleEl.textContent = titleEl.textContent.slice(0, TITLE_MAX);
+    const range = document.createRange();
+    range.selectNodeContents(titleEl);
+    range.collapse(false);
+    window.getSelection().removeAllRanges(); // not setSelection: that remembers editor ranges
+    window.getSelection().addRange(range);
+  }
   clearTimeout(titleTimer);
   titleTimer = setTimeout(() => {
-    if (titleEl.value.trim()) api.update({ title: titleEl.value.trim() });
+    if (titleText()) api.update({ title: titleText() });
   }, SAVE_MS);
 });
+titleEl.addEventListener('paste', (e) => {
+  e.preventDefault();
+  document.execCommand('insertText', false, e.clipboardData.getData('text/plain').replace(/\s+/g, ' '));
+});
+titleEl.addEventListener('drop', (e) => e.preventDefault());
 titleEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); titleEl.blur(); }
 });
 titleEl.addEventListener('blur', () => {
   clearTimeout(titleTimer);
-  const t = titleEl.value.trim();
-  if (!t) { titleEl.value = note.title; fitTitle(); return; }
-  if (t !== note.title) { note.title = t; api.update({ title: t }); }
-  titleEl.scrollLeft = 0;
+  const t = titleText();
+  titleEl.textContent = t || note.title;
+  if (t && t !== note.title) { note.title = t; api.update({ title: t }); }
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1017,6 +1023,7 @@ document.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'n' && !e.shiftKey) { e.preventDefault(); flushText(); api.newNote(); }
   else if (k === 'w') { e.preventDefault(); closeNote(); }
+  else if (k === 's' && !e.shiftKey) { e.preventDefault(); flushText().then(() => api.save()); }
   else if (k === 'e' && !e.shiftKey) { e.preventDefault(); toggleStylePop(); }
   else if (k === 'd') { e.preventDefault(); setMode(note.mode === 'draw' ? 'type' : 'draw'); }
   else if (k === 'z' && !e.shiftKey && note.mode === 'draw') { e.preventDefault(); undoStroke(); }
@@ -1029,7 +1036,7 @@ document.addEventListener('keydown', (e) => {
 // ---------- window drag (manual, so it works on rotated notes) ----------
 
 bar.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || e.target.closest('button, input')) return;
+  if (e.button !== 0 || e.target.closest('button, input, .title, .edge')) return;
   e.preventDefault();
   bar.setPointerCapture(e.pointerId);
   dragging = { raf: 0, settle: 0 };
@@ -1062,25 +1069,37 @@ bar.addEventListener('pointerup', endDrag);
 bar.addEventListener('pointercancel', endDrag);
 
 // ---------- custom resize (transparent windows can't use native resize on Windows) ----------
+// Any edge or corner. Main follows the OS cursor, like the drag; the page only says which edge.
 
-const grip = $('grip');
-grip.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
-  e.preventDefault();
-  grip.setPointerCapture(e.pointerId);
-  resizing = { sx: e.screenX, sy: e.screenY, w: window.outerWidth, h: window.outerHeight, raf: 0 };
-});
-grip.addEventListener('pointermove', (e) => {
-  if (!resizing) return;
-  const { sx, sy, w, h } = resizing;
-  const nw = w + (e.screenX - sx);
-  const nh = h + (e.screenY - sy);
-  cancelAnimationFrame(resizing.raf);
-  resizing.raf = requestAnimationFrame(() => api.resize(nw, nh));
-});
-const endResize = () => { resizing = null; };
-grip.addEventListener('pointerup', endResize);
-grip.addEventListener('pointercancel', endResize);
+for (const edge of document.querySelectorAll('.edge')) {
+  const [dx, dy] = edge.dataset.edge.split(',').map(Number);
+  edge.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    edge.setPointerCapture(e.pointerId);
+    resizing = { raf: 0 };
+    api.resizeStart(dx, dy);
+    document.body.classList.add('resizing');
+  });
+  edge.addEventListener('pointermove', () => {
+    if (!resizing || resizing.raf) return;
+    resizing.raf = requestAnimationFrame(() => {
+      if (!resizing) return;
+      resizing.raf = 0;
+      api.resizeMove();
+    });
+  });
+  const endResize = () => {
+    if (!resizing) return;
+    cancelAnimationFrame(resizing.raf);
+    resizing = null;
+    api.resizeEnd();
+    document.body.classList.remove('resizing');
+  };
+  edge.addEventListener('pointerup', endResize);
+  edge.addEventListener('pointercancel', endResize);
+}
 
 // Fonts like Marker load lazily and change text metrics; refit when they arrive.
 document.fonts.addEventListener('loadingdone', () => { if (note) queueFit(); });
@@ -1148,12 +1167,10 @@ api.onChanged((patch) => {
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (!note || !(e.target instanceof Element) || !e.target.closest('.note')) return;
-  const active = document.activeElement;
   const inTitle = e.target.closest('#title');
   const editable = !!(inTitle || e.target.closest('#editor'));
   let selection = false;
-  if (inTitle && active === titleEl) selection = titleEl.selectionStart !== titleEl.selectionEnd;
-  else selection = !!window.getSelection().toString();
+  selection = !!window.getSelection().toString();
   api.showMenu({ editable, selection });
 });
 
@@ -1164,6 +1181,16 @@ api.onMenuEdit(({ cmd, text }) => {
     document.execCommand(cmd);
   }
   if (document.activeElement === editor) contentChanged();
+});
+
+// Saved to the library (menu or Ctrl/Cmd+S): a short confirmation on the card.
+let savedBadgeTimer = null;
+api.onSaved(() => {
+  const badge = $('savedBadge');
+  badge.hidden = false;
+  react('surprised', 500);
+  clearTimeout(savedBadgeTimer);
+  savedBadgeTimer = setTimeout(() => { badge.hidden = true; }, 1200);
 });
 
 function focusText() {
@@ -1526,7 +1553,7 @@ api.init().then(({ note: n, platform, theme }) => {
   isMac = platform === 'darwin';
   document.documentElement.dataset.platform = platform;
   strokes = note.strokes;
-  titleEl.value = note.title;
+  titleEl.textContent = note.title;
   editor.innerHTML = note.html !== null
     ? sanitize(note.html)
     : escapeHtml(note.text).replace(/\n/g, '<br>');
@@ -1541,8 +1568,6 @@ api.init().then(({ note: n, platform, theme }) => {
   editor.dataset.placeholder = pick(PLACEHOLDERS);
   if (document.hasFocus()) document.body.classList.add('focused');
   playEnter();
-  fitTitle();
-  document.fonts.ready.then(fitTitle);
   if (wantFocus) focusText();
   // Main shows the window once laid out. Not via requestAnimationFrame: WebKit (macOS) runs
   // no frames in a hidden window, so the note would never appear.

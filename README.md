@@ -22,7 +22,7 @@ Type, draw, tick things off. The eyes follow your mouse around.
 ## Features
 
 - **Notes that live on your desktop.** Each note is its own small window. Drag it by the
-  title bar, resize it from the corner, pin it to stay on top of everything else
+  title bar, resize it from any edge or corner, pin it to stay on top of everything else
   (on a Mac, even over full-screen apps).
 - **Googly eyes.** Every note watches your cursor, blinks, and looks surprised when you
   grab it. Ticking a checklist item throws confetti; closing a note goes *poof*.
@@ -36,10 +36,15 @@ Type, draw, tick things off. The eyes follow your mouse around.
   Hover an option to preview it live. 🎲 picks a random look.
 - **Names with personality.** New notes are called things like *Velvet Comet* or
   *Moonlit Pickle* instead of "Note 7". Click the title to rename.
+- **Save notes for later.** Right-click a note → **Save to library** (or <kbd>Ctrl</kbd>+<kbd>S</kbd> /
+  <kbd>⌘</kbd><kbd>S</kbd>). Tray icon → **Saved notes** opens a fresh copy any time, so a
+  checklist or template can be reused again and again.
+- **Updates itself.** Toonii checks for a new version now and then; right-click a note
+  (or the tray icon) → **Check for updates…** to check now and install with one click.
 - **Nothing gets lost.** Notes save as you type. Closed notes with content can be
   brought back from the tray menu → **Recently closed**.
-- **Private by design.** No account, no cloud, no network calls. Notes are a single
-  JSON file on your computer.
+- **Private by design.** No account, no cloud. Notes are a single JSON file on your
+  computer; the only network call is the update check against this repo's GitHub releases.
 - **Tiny.** A 1.3 MB Windows installer and a 3.7 MB Mac disk image, built with [Tauri](https://tauri.app) on
   the web engine your system already has (Edge WebView2 on Windows, WebKit on macOS).
 
@@ -143,7 +148,19 @@ internal disk instead: `export CARGO_TARGET_DIR="$HOME/Library/Caches/toonii-tar
 
 **Releases** are built by hand: `npm run build` on Windows for the `.exe` files, and
 `npx tauri build --target universal-apple-darwin` on a Mac for the `.dmg` (zip the `.app`
-for the `.zip`). Attach them to a GitHub release.
+for the `.zip`). Attach them to a GitHub release tagged `v<version>`.
+
+Updates are signed. Builds need the updater's private key (kept out of the repo, at
+`~/.tauri/toonii.key`; back it up, since a lost key means existing installs can't update):
+
+```sh
+export TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/toonii.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+npx tauri build --target universal-apple-darwin
+npm run manifest -- "What's new"   # writes dist/latest.json; run again after the Windows build
+```
+
+Upload `dist/latest.json`, `Toonii.app.tar.gz` (+ `.sig`) and the `-setup.exe` (+ `.sig`) to the
+release too. The app reads `releases/latest/download/latest.json`.
 
 ## Project layout
 

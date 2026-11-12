@@ -14,7 +14,11 @@
     update: (patch) => invoke('note_update', { patch }),
     close: () => invoke('note_close'),
     newNote: () => invoke('note_new'),
-    resize: (width, height) => invoke('note_resize', { width, height }),
+    // edge resize; dx/dy pick the edge (-1 left/top, 0 none, 1 right/bottom)
+    resizeStart: (dx, dy) => invoke('note_resize_start', { dx, dy }),
+    resizeMove: () => invoke('note_resize_move'),
+    resizeEnd: () => invoke('note_resize_end'),
+    save: () => invoke('note_save'),
     dragStart: () => invoke('note_drag_start'),
     dragMove: () => invoke('note_drag_move'), // resolves to the sideways step, for the sway
     dragEnd: () => invoke('note_drag_end'),
@@ -29,6 +33,7 @@
     // cursor in this window's own coordinates (CSS px), from anywhere on screen
     onCursor: (cb) => on('app:cursor', ([x, y]) => cb(x, y)),
     onMenuEdit: (cb) => on('menu:edit', cb),
+    onSaved: (cb) => on('note:saved', () => cb()),
   };
 
   window.menu = {

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const TRASH_LIMIT: usize = 20;
+const LIBRARY_LIMIT: usize = 50;
 pub const NOTE_FONTS: [&str; 5] = ["sans", "serif", "mono", "hand", "marker"];
 pub const COLOR_IDS: [&str; 6] = ["yellow", "blue", "green", "pink", "purple", "gray"];
 pub const MAX_TILT: f64 = 15.0;
@@ -154,6 +155,7 @@ struct Data {
     next_number: u64,
     notes: Vec<Note>,
     trash: Vec<Note>,
+    library: Vec<Note>, // saved notes, reopened as fresh copies from the tray
     settings: Map<String, Value>,
 }
 
@@ -278,5 +280,34 @@ impl Store {
 
     pub fn empty_trash(&mut self) {
         self.data.trash.clear();
+    }
+
+    pub fn library(&self) -> &[Note] {
+        &self.data.library
+    }
+
+    /// Save a copy of a note for reuse. Saving a note under a name already in the library
+    /// replaces that entry, so saving again updates it.
+    pub fn save_to_library(&mut self, id: &str) -> bool {
+        let Some(note) = self.get(id) else { return false };
+        let mut copy = Note { id: uuid::Uuid::new_v4().to_string(), bounds: None, pinned: false, closed_at: None, ..note.clone() };
+        copy.updated_at = now_ms();
+        self.data.library.retain(|n| n.title != copy.title);
+        self.data.library.insert(0, copy);
+        self.data.library.truncate(LIBRARY_LIMIT);
+        true
+    }
+
+    /// A new note on the desktop made from a saved one; the saved copy stays in the library.
+    pub fn from_library(&mut self, id: &str) -> Option<Note> {
+        let saved = self.data.library.iter().find(|n| n.id == id)?;
+        let now = now_ms();
+        let note = Note { id: uuid::Uuid::new_v4().to_string(), created_at: now, updated_at: now, ..saved.clone() };
+        self.data.notes.push(note.clone());
+        Some(note)
+    }
+
+    pub fn remove_from_library(&mut self, id: &str) {
+        self.data.library.retain(|n| n.id != id);
     }
 }

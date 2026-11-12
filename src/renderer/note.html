@@ -38,7 +38,7 @@
     <header class="bar" id="bar">
       <span class="dot" aria-hidden="true"></span>
       <span class="eyes" id="eyes" aria-hidden="true"><i class="eye"><b></b></i><i class="eye"><b></b></i></span>
-      <input class="title" id="title" spellcheck="false" maxlength="80" aria-label="Note title">
+      <div class="title" id="title" contenteditable="plaintext-only" spellcheck="false" role="textbox" aria-label="Note title"></div>
       <div class="tools">
         <button class="icon on-hover" id="styleBtn" title="Customize (Ctrl+E)" aria-label="Customize" aria-expanded="false"><svg class="i"><use href="#i-palette"/></svg></button>
         <button class="icon on-hover" id="pinBtn" title="Keep on top" aria-label="Keep on top" aria-pressed="false"><svg class="i"><use href="#i-pin"/></svg></button>
@@ -62,9 +62,18 @@
       </div>
     </main>
 
-    <div class="grip" id="grip" title="Resize">
+    <!-- Resize from any edge or corner; the corner grip is the visible hint. -->
+    <div class="edge" data-edge="0,-1"></div>
+    <div class="edge" data-edge="1,0"></div>
+    <div class="edge" data-edge="0,1"></div>
+    <div class="edge" data-edge="-1,0"></div>
+    <div class="edge" data-edge="-1,-1"></div>
+    <div class="edge" data-edge="1,-1"></div>
+    <div class="edge" data-edge="-1,1"></div>
+    <div class="grip edge" id="grip" data-edge="1,1" title="Resize">
       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M11 4 4 11M11 8l-3 3"/></svg>
     </div>
+    <div class="saved-badge" id="savedBadge" hidden>Saved to library</div>
   </div>
 
   <!-- Customize panel: docks beside the note (outside it), so the note stays fully visible
@@ -126,6 +135,8 @@
       </div>
       <p class="tip">Tip: hold the mouse on a note and scroll to rotate it.</p>
     </section>
+
+    <footer class="credit">Made with <span class="heart" aria-label="love">♥</span> by Sudhara</footer>
   </aside>
 
   <div class="tilt-badge" id="tiltBadge" hidden>0°</div>
