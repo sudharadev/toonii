@@ -157,6 +157,16 @@ struct Data {
     settings: Map<String, Value>,
 }
 
+pub fn write_atomic(file: &Path, json: &str) {
+    if let Some(dir) = file.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let tmp = file.with_extension("json.tmp");
+    if fs::write(&tmp, json).is_ok() {
+        let _ = fs::rename(&tmp, file);
+    }
+}
+
 pub struct Store {
     file: PathBuf,
     data: Data,
@@ -206,15 +216,14 @@ impl Store {
     }
 
     pub fn save_now(&self) {
-        if let Some(dir) = self.file.parent() {
-            let _ = fs::create_dir_all(dir);
+        if let Some((file, json)) = self.snapshot() {
+            write_atomic(&file, &json);
         }
-        let tmp = self.file.with_extension("json.tmp");
-        if let Ok(json) = serde_json::to_string(&self.data) {
-            if fs::write(&tmp, json).is_ok() {
-                let _ = fs::rename(&tmp, &self.file);
-            }
-        }
+    }
+
+    /// The file and its contents, so the write can happen without holding the store lock.
+    pub fn snapshot(&self) -> Option<(PathBuf, String)> {
+        serde_json::to_string(&self.data).ok().map(|json| (self.file.clone(), json))
     }
 
     pub fn all(&self) -> &[Note] {

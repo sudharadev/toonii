@@ -15,14 +15,14 @@ use store::{Bounds, Note, Store, COLOR_IDS};
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, RunEvent, State, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, RunEvent, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const APP_NAME: &str = "Toonii";
-const DATA_DIR: &str = "Toonii"; // %APPDATA%\Toonii, same folder as the Electron build
+const DATA_DIR: &str = "Toonii"; // %APPDATA%\Toonii or ~/Library/Application Support/Toonii
 const LEGACY_DATA_DIRS: [&str; 2] = ["Stickynotee", "stickynotee"];
 const DEFAULT_SIZE: (f64, f64) = (340.0, 270.0);
 const MIN_SIZE: (f64, f64) = (300.0, 170.0);
@@ -67,10 +67,18 @@ struct MenuState {
     spec: Value,
 }
 
+/// A title-bar drag in progress, in physical px.
+struct Drag {
+    cursor: (f64, f64),
+    win: (i32, i32),
+    last_x: f64,
+}
+
 struct Inner {
     store: Store,
     stages: HashMap<String, Stage>,
     focus_pending: HashSet<String>,
+    drags: HashMap<String, Drag>,
     notes_hidden: bool,
     menu: Option<MenuState>,
 }
@@ -222,10 +230,39 @@ fn note_windows(app: &AppHandle) -> Vec<WebviewWindow> {
     app.webview_windows().into_iter().filter(|(l, _)| l.starts_with(NOTE_PREFIX)).map(|(_, w)| w).collect()
 }
 
+/// Keep a note above other windows. On macOS a full-screen app has its own Space, so an
+/// on-top window must also join every Space (as a full-screen auxiliary) to float over it.
+fn set_on_top(win: &WebviewWindow, on: bool) {
+    let _ = win.set_always_on_top(on);
+    set_all_spaces(win, on);
+}
+
+#[cfg(target_os = "macos")]
+fn set_all_spaces(win: &WebviewWindow, on: bool) {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
+    let w = win.clone();
+    let _ = win.run_on_main_thread(move || {
+        let Ok(ptr) = w.ns_window() else { return };
+        // SAFETY: tao's NSWindow pointer, valid while the window lives; on the main thread.
+        let ns: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        let flags = B::CanJoinAllSpaces | B::FullScreenAuxiliary;
+        let mut b = ns.collectionBehavior();
+        if on {
+            b = (b - B::MoveToActiveSpace) | flags;
+        } else {
+            b = b - flags;
+        }
+        ns.setCollectionBehavior(b);
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_all_spaces(_win: &WebviewWindow, _on: bool) {}
+
 fn raise(win: &WebviewWindow, pinned: bool) {
-    // Toggling topmost brings a window to the front without stealing focus (Windows).
+    // Toggling topmost brings a window to the front without stealing focus.
     let _ = win.set_always_on_top(true);
-    let _ = win.set_always_on_top(pinned);
+    set_on_top(win, pinned);
 }
 
 fn open_window(app: &AppHandle, note: &Note, focus: bool) {
@@ -264,8 +301,12 @@ fn open_window(app: &AppHandle, note: &Note, focus: bool) {
         .visible(false) // shown by note_ready once the page has laid out
         .disable_drag_drop_handler()
         .build();
-    if built.is_err() {
-        st.lock().stages.remove(&label);
+    match built {
+        Ok(w) if note.pinned => set_all_spaces(&w, true),
+        Ok(_) => {}
+        Err(_) => {
+            st.lock().stages.remove(&label);
+        }
     }
 }
 
@@ -299,7 +340,13 @@ fn close_note(app: &AppHandle, id: &str) {
     st.lock().store.discard(id);
     st.touch();
     if let Some(w) = note_window(app, id) {
-        let _ = w.destroy();
+        // Hide first so the note is gone at once; tearing down a webview takes a moment and
+        // blocks the UI thread, so let this frame paint before destroying it.
+        let _ = w.hide();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(60));
+            let _ = w.destroy();
+        });
     }
     refresh_tray(app);
 }
@@ -331,7 +378,7 @@ fn set_note_props(app: &AppHandle, id: &str, patch: Value) {
     st.touch();
     let Some(win) = note_window(app, id) else { return };
     if let Some(p) = applied.get("pinned").and_then(Value::as_bool) {
-        let _ = win.set_always_on_top(p);
+        set_on_top(&win, p);
     }
     let _ = app.emit_to(win.label(), "note:changed", patch);
 }
@@ -470,6 +517,7 @@ fn ensure_menu_window(app: &AppHandle) -> Option<WebviewWindow> {
         .visible(false)
         .build()
         .ok()
+        .inspect(|w| set_all_spaces(w, true))
 }
 
 fn hide_menu(app: &AppHandle) {
@@ -593,8 +641,10 @@ fn note_ready(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>) {
     }
 }
 
+// Async so saves while typing never wait on the UI thread.
 #[tauri::command]
-fn note_update(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>, patch: Value) {
+async fn note_update(window: WebviewWindow, app: AppHandle, patch: Value) {
+    let st = state(&app);
     let Some(id) = note_id(&window) else { return };
     let applied = {
         let mut inner = st.lock();
@@ -605,20 +655,19 @@ fn note_update(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>, p
     };
     st.touch();
     if let Some(p) = applied.get("pinned").and_then(Value::as_bool) {
-        let _ = window.set_always_on_top(p);
+        set_on_top(&window, p);
         // Echo the state so the pin icon (filled = on top) never drifts from the window.
         let _ = app.emit_to(window.label(), "note:changed", json!({ "pinned": p }));
     }
     if let Some(t) = applied.get("title").and_then(Value::as_str) {
         let _ = window.set_title(t);
     }
-    if applied.contains_key("text") || applied.contains_key("strokes") || applied.contains_key("title") {
-        refresh_tray(&app);
-    }
+    // No tray refresh: the tray lists only closed notes, and rebuilding the native menu on
+    // every keystroke save made typing stutter.
 }
 
 #[tauri::command]
-fn note_close(window: WebviewWindow, app: AppHandle) {
+async fn note_close(window: WebviewWindow, app: AppHandle) {
     if let Some(id) = note_id(&window) {
         close_note(&app, &id);
     }
@@ -655,12 +704,37 @@ fn note_resize_centered(window: WebviewWindow, st: State<'_, AppState>, width: f
     set_win_bounds(&window, Bounds { x: b.x + (b.width - w) / 2.0, y: b.y + (b.height - h) / 2.0, width: w, height: h });
 }
 
-/// Manual window drag (keeps the drag sway animation on rotated notes).
+/// Manual window drag (keeps the drag sway animation on rotated notes). Done here from the
+/// OS cursor because page screen coordinates differ between WebView2 and WebKit (macOS).
 #[tauri::command]
-fn note_move(window: WebviewWindow, x: f64, y: f64) {
-    if x.is_finite() && y.is_finite() {
-        let _ = window.set_position(LogicalPosition::new(x.round(), y.round()));
-    }
+fn note_drag_start(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>) {
+    let (Ok(c), Ok(p)) = (app.cursor_position(), window.outer_position()) else { return };
+    let drag = Drag { cursor: (c.x, c.y), win: (p.x, p.y), last_x: c.x };
+    st.lock().drags.insert(window.label().to_string(), drag);
+}
+
+/// Follow the cursor; returns its sideways step since the last call (CSS px) for the sway.
+#[tauri::command]
+fn note_drag_move(window: WebviewWindow, app: AppHandle, st: State<'_, AppState>) -> f64 {
+    let Ok(c) = app.cursor_position() else { return 0.0 };
+    let (pos, step) = {
+        let mut inner = st.lock();
+        let Some(d) = inner.drags.get_mut(window.label()) else { return 0.0 };
+        let pos = PhysicalPosition::new(
+            d.win.0 + (c.x - d.cursor.0).round() as i32,
+            d.win.1 + (c.y - d.cursor.1).round() as i32,
+        );
+        let step = c.x - d.last_x;
+        d.last_x = c.x;
+        (pos, step)
+    };
+    let _ = window.set_position(pos);
+    step / window.scale_factor().unwrap_or(1.0)
+}
+
+#[tauri::command]
+fn note_drag_end(window: WebviewWindow, st: State<'_, AppState>) {
+    st.lock().drags.remove(window.label());
 }
 
 #[derive(Deserialize)]
@@ -802,7 +876,11 @@ fn spawn_saver(app: AppHandle) {
         thread::sleep(Duration::from_millis(250));
         let st = state(&app);
         if st.dirty.swap(false, Ordering::Relaxed) {
-            st.lock().store.save_now();
+            // Only the snapshot holds the lock; the disk write must not stall drags or typing.
+            let snap = st.lock().store.snapshot();
+            if let Some((file, json)) = snap {
+                store::write_atomic(&file, &json);
+            }
         }
     });
 }
@@ -853,8 +931,10 @@ fn migrate_legacy(base: &std::path::Path, dir: &std::path::Path) {
 }
 
 fn main() {
-    let new_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyN);
-    let toggle_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyH);
+    // Ctrl+Alt on Windows, Cmd+Option on macOS (matches the tray's CmdOrCtrl+Alt hints).
+    let mods = if cfg!(target_os = "macos") { Modifiers::SUPER | Modifiers::ALT } else { Modifiers::CONTROL | Modifiers::ALT };
+    let new_shortcut = Shortcut::new(Some(mods), Code::KeyN);
+    let toggle_shortcut = Shortcut::new(Some(mods), Code::KeyH);
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_all(app)))
@@ -874,6 +954,9 @@ fn main() {
                 .build(),
         )
         .setup(move |app| {
+            // A tray app like on Windows: no Dock icon, no app menu bar.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let handle = app.handle().clone();
             let base = app.path().data_dir()?;
             // TOONII_DATA_DIR points a test run at throwaway notes.
@@ -884,6 +967,7 @@ fn main() {
                     store: Store::load(&dir),
                     stages: HashMap::new(),
                     focus_pending: HashSet::new(),
+                    drags: HashMap::new(),
                     notes_hidden: false,
                     menu: None,
                 }),
@@ -915,7 +999,8 @@ fn main() {
 
             let notes: Vec<Note> = state(&handle).lock().store.all().to_vec();
             if notes.is_empty() {
-                create_note(&handle, None, "Hi! Drag me by the top bar.\nCtrl+Alt+N makes a new note.");
+                let hint = if cfg!(target_os = "macos") { "\u{2318}\u{2325}N" } else { "Ctrl+Alt+N" };
+                create_note(&handle, None, &format!("Hi! Drag me by the top bar.\n{hint} makes a new note."));
             } else {
                 for n in &notes {
                     open_window(&handle, n, false);
@@ -954,6 +1039,7 @@ fn main() {
                     let mut inner = st.lock();
                     inner.stages.remove(&label);
                     inner.focus_pending.remove(&label);
+                    inner.drags.remove(&label);
                 }
                 _ => {}
             }
@@ -966,7 +1052,9 @@ fn main() {
             note_new,
             note_resize,
             note_resize_centered,
-            note_move,
+            note_drag_start,
+            note_drag_move,
+            note_drag_end,
             note_stage,
             note_passthrough,
             note_menu,

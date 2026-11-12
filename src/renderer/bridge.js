@@ -15,7 +15,9 @@
     close: () => invoke('note_close'),
     newNote: () => invoke('note_new'),
     resize: (width, height) => invoke('note_resize', { width, height }),
-    move: (x, y) => invoke('note_move', { x, y }),
+    dragStart: () => invoke('note_drag_start'),
+    dragMove: () => invoke('note_drag_move'), // resolves to the sideways step, for the sway
+    dragEnd: () => invoke('note_drag_end'),
     resizeCentered: (width, height) => invoke('note_resize_centered', { width, height }),
     setStage: (req) => invoke('note_stage', { req }),
     setPassthrough: (ignore) => invoke('note_passthrough', { ignore }),

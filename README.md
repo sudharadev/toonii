@@ -7,7 +7,7 @@
 **Cartoon sticky notes with googly eyes that float on your desktop.**
 Type, draw, tick things off. The eyes follow your mouse around.
 
-![Version](https://img.shields.io/badge/version-1.0.0-FFD84D?style=flat-square&labelColor=17171c)
+![Version](https://img.shields.io/badge/version-1.0.1-FFD84D?style=flat-square&labelColor=17171c)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-6CC8FF?style=flat-square&labelColor=17171c)
 ![Tauri](https://img.shields.io/badge/tauri-2-7DE38D?style=flat-square&labelColor=17171c)
 ![Size](https://img.shields.io/badge/installer-1.3%20MB-B79CFF?style=flat-square&labelColor=17171c)
@@ -40,40 +40,50 @@ Type, draw, tick things off. The eyes follow your mouse around.
 - **Private by design.** No account, no cloud, no network calls. Notes are a single
   JSON file on your computer.
 - **Tiny.** A 1.3 MB installer and a 3.6 MB app, built with [Tauri](https://tauri.app) on
-  the Edge WebView2 engine that ships with Windows.
+  the web engine your system already has (Edge WebView2 on Windows, WebKit on macOS).
 
 ## Download
 
-Get the latest Windows build from [**Releases**](../../releases/latest):
+Get the latest build from [**Releases**](../../releases/latest):
 
 | File | What it is |
 |---|---|
-| `Toonii-Setup-1.0.0.exe` (1.3 MB) | Installer. Per-user, no admin rights needed, adds a Start menu shortcut. |
-| `Toonii-1.0.0-portable.exe` (3.6 MB) | Single file. Runs from anywhere without installing. |
+| `Toonii-Setup-1.0.1.exe` | Windows installer. Per-user, no admin rights needed, adds a Start menu shortcut. |
+| `Toonii-1.0.1-portable.exe` | Windows single file. Runs from anywhere without installing. |
+| `Toonii-1.0.1-mac.dmg` | macOS 12+, Apple silicon and Intel. Drag Toonii to Applications. |
+| `Toonii-1.0.1-mac.zip` | The same Mac app, zipped, if you'd rather skip the disk image. |
 
 Toonii uses Microsoft Edge WebView2, which is built into Windows 10 and 11. On the rare PC
-without it, the installer fetches it automatically.
+without it, the installer fetches it automatically. On macOS it uses the system WebKit.
+On a Mac, Toonii lives in the menu bar (no Dock icon), the same way it lives in the
+Windows tray.
 
 > [!NOTE]
-> The builds are not code-signed yet, so Windows SmartScreen may warn on first launch.
-> Click **More info → Run anyway**.
-
-macOS builds come from the same code (`npm run build` on a Mac).
+> Toonii is open source and the builds are not code-signed, so you install them at your own
+> risk (or [build from source](#build-from-source)). Your system will warn on first launch:
+>
+> - **Windows:** SmartScreen says "Windows protected your PC". Click **More info → Run anyway**.
+> - **macOS:** Open Toonii once and dismiss the warning, then go to **System Settings →
+>   Privacy & Security** and click **Open Anyway**. If macOS says the app "is damaged", that
+>   is the download quarantine flag; clear it in Terminal and open it again:
+>   ```sh
+>   xattr -dr com.apple.quarantine /Applications/Toonii.app
+>   ```
 
 ## Using Toonii
 
 | To… | Do this |
 |---|---|
-| Make a note | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> from anywhere, or tray icon → **New note** |
+| Make a note | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> (<kbd>⌘</kbd><kbd>⌥</kbd><kbd>N</kbd> on Mac) from anywhere, or tray icon → **New note** |
 | Format text | Click into the text or select some: the toolbar pops up under the note |
 | Start a checklist | Type `[] ` at the start of a line (`- ` for bullets). Click a box to tick it |
 | Draw | Click **Draw** in the title bar (<kbd>Ctrl</kbd>+<kbd>D</kbd>) |
 | Rotate | Hold the mouse button on a note and scroll, or <kbd>Alt</kbd> + scroll |
 | Keep on top | Pin button in the title bar. A filled pin means pinned |
 | Change color, font, size | Palette button in the title bar, or right-click the note |
-| Hide everything | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd> (again to bring them back) |
+| Hide everything | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd> (<kbd>⌘</kbd><kbd>⌥</kbd><kbd>H</kbd> on Mac; again to bring them back) |
 | Restore a closed note | Tray icon → **Recently closed** |
-| Start with Windows | Tray icon → **Open at login** |
+| Start at login | Tray icon → **Open at login** |
 
 ## Keyboard shortcuts
 
@@ -103,7 +113,8 @@ copy it to another machine to move your notes. Notes from the app's old name
 ## Build from source
 
 Needs [Node.js](https://nodejs.org) 20+, [Rust](https://rustup.rs) (stable) and, on Windows,
-the Visual Studio C++ Build Tools. See [Tauri prerequisites](https://tauri.app/start/prerequisites/).
+the Visual Studio C++ Build Tools (on macOS, the Xcode Command Line Tools:
+`xcode-select --install`). See [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```sh
 git clone <this repo>
@@ -115,14 +126,17 @@ npm start            # run the app (debug build)
 Package it:
 
 ```sh
-npm run build        # src-tauri/target/release/toonii.exe + bundle/nsis/*-setup.exe
+npm run build        # Windows: src-tauri/target/release/toonii.exe + bundle/nsis/*-setup.exe
+                     # macOS:   src-tauri/target/release/bundle/macos/Toonii.app + bundle/dmg/*.dmg
+npx tauri build --target universal-apple-darwin   # one Mac app for Apple silicon + Intel
 npm run icons        # regenerate the app and tray icons in assets/
 ```
 
 Set `TOONII_DATA_DIR` to run against a throwaway notes folder while testing.
 
-**Releases:** pushing a tag like `v1.0.0` runs [`release.yml`](.github/workflows/release.yml),
-which builds on Windows and attaches both `.exe` files to a GitHub release.
+**Releases** are built by hand: `npm run build` on Windows for the `.exe` files, and
+`npx tauri build --target universal-apple-darwin` on a Mac for the `.dmg` (zip the `.app`
+for the `.zip`). Attach them to a GitHub release.
 
 ## Project layout
 
@@ -131,6 +145,7 @@ src-tauri/
   src/main.rs          windows, stage, tray, global shortcuts, right-click menu, commands
   src/store.rs         notes.json persistence (debounced, atomic writes)
   tauri.conf.json      app, bundle and security config
+  tauri.macos.conf.json  macOS bundle overrides (.app + .dmg, ad-hoc signing)
 src/renderer/
   bridge.js            the pages' small API onto the Rust commands and events
   note.html|css|js     the note: editor, auto-fit text, drawing canvas, customize panel

@@ -62,10 +62,9 @@ api.onShow((spec) => {
   menuEl.replaceChildren(...spec.items.map(renderItem));
   focusIndex = -1;
   menuEl.classList.remove('show');
-  requestAnimationFrame(() => {
-    const r = menuEl.getBoundingClientRect();
-    api.ready(Math.ceil(r.width), Math.ceil(r.height));
-  });
+  // Measure now, not in a frame callback: WebKit (macOS) runs no frames while hidden.
+  const r = menuEl.getBoundingClientRect();
+  api.ready(Math.ceil(r.width), Math.ceil(r.height));
 });
 
 // main sets this once the window is placed, so the pop starts from the cursor corner

@@ -99,10 +99,10 @@ function editorText() {
 }
 
 function flushText() {
-  if (textTimer === null) return;
+  if (textTimer === null) return Promise.resolve();
   clearTimeout(textTimer);
   textTimer = null;
-  api.update({ html: editorHtml(), text: editorText() });
+  return api.update({ html: editorHtml(), text: editorText() });
 }
 
 // Saved HTML without runtime-only bits: the synced item font sizes and animation classes.
@@ -829,10 +829,11 @@ let closing = false;
 function closeNote() {
   if (closing) return;
   closing = true;
-  flushText();
-  if (reduceMotion.matches) { api.close(); return; }
+  // close only after the last save lands, so "Recently closed" keeps the final text
+  const saved = flushText().catch(() => {});
+  if (reduceMotion.matches) { saved.then(() => api.close()); return; }
   poof();
-  setTimeout(() => api.close(), 340);
+  setTimeout(() => saved.then(() => api.close()), 340);
 }
 
 // ---------- rotation: slider, menu, or hold the top bar (or Alt) and scroll ----------
@@ -975,7 +976,16 @@ stylePop.addEventListener('click', (e) => {
 tiltInput.addEventListener('input', () => rotateTo(Number(tiltInput.value)));
 $('tiltReset').addEventListener('click', () => rotateTo(0));
 
+// The title input sizes to its text with CSS field-sizing; older Safari WebKit lacks it.
+const fitTitle = CSS.supports('field-sizing', 'content') ? () => {} : () => {
+  const ctx = (fitTitle.ctx ||= document.createElement('canvas').getContext('2d'));
+  const cs = getComputedStyle(titleEl);
+  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 2;
+  titleEl.style.width = `${Math.ceil(ctx.measureText(titleEl.value || ' ').width + pad)}px`;
+};
 titleEl.addEventListener('input', () => {
+  fitTitle();
   clearTimeout(titleTimer);
   titleTimer = setTimeout(() => {
     if (titleEl.value.trim()) api.update({ title: titleEl.value.trim() });
@@ -987,7 +997,7 @@ titleEl.addEventListener('keydown', (e) => {
 titleEl.addEventListener('blur', () => {
   clearTimeout(titleTimer);
   const t = titleEl.value.trim();
-  if (!t) { titleEl.value = note.title; return; }
+  if (!t) { titleEl.value = note.title; fitTitle(); return; }
   if (t !== note.title) { note.title = t; api.update({ title: t }); }
   titleEl.scrollLeft = 0;
 });
@@ -1022,27 +1032,28 @@ bar.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || e.target.closest('button, input')) return;
   e.preventDefault();
   bar.setPointerCapture(e.pointerId);
-  dragging = {
-    sx: e.screenX, sy: e.screenY, wx: window.screenX, wy: window.screenY, raf: 0, lastX: e.screenX, settle: 0,
-  };
+  dragging = { raf: 0, settle: 0 };
+  api.dragStart();
   document.body.classList.add('dragging');
   react('surprised', 350);
 });
 bar.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
-  const x = dragging.wx + (e.screenX - dragging.sx);
-  const y = dragging.wy + (e.screenY - dragging.sy);
-  cancelAnimationFrame(dragging.raf);
-  dragging.raf = requestAnimationFrame(() => api.move(x, y));
-  // Sway like paper held at the top: lean into the direction of travel, settle when still.
-  const vx = e.screenX - dragging.lastX;
-  dragging.lastX = e.screenX;
-  setSwing(Math.max(-6, Math.min(6, swingNow * 0.6 + vx * 0.5)));
-  clearTimeout(dragging.settle);
-  dragging.settle = setTimeout(() => setSwing(0), 90);
+  if (!dragging || dragging.raf) return;
+  // main moves the window to follow the OS cursor, at most once a frame
+  dragging.raf = requestAnimationFrame(() => {
+    if (!dragging) return;
+    dragging.raf = 0;
+    api.dragMove().then((vx) => {
+      if (!dragging) return;
+      // Sway like paper held at the top: lean into the direction of travel, settle when still.
+      setSwing(Math.max(-6, Math.min(6, swingNow * 0.6 + vx * 0.5)));
+      clearTimeout(dragging.settle);
+      dragging.settle = setTimeout(() => setSwing(0), 90);
+    });
+  });
 });
 const endDrag = () => {
-  if (dragging) clearTimeout(dragging.settle);
+  if (dragging) { clearTimeout(dragging.settle); cancelAnimationFrame(dragging.raf); api.dragEnd(); }
   dragging = null;
   document.body.classList.remove('dragging');
   setSwing(0); // the rotate transition overshoots, so it wobbles to rest
@@ -1094,7 +1105,7 @@ window.addEventListener('resize', () => {
 // ---------- click-through for the transparent gutter ----------
 
 document.addEventListener('mousemove', (e) => {
-  lookAt(e.clientX, e.clientY);
+  queueLook(e.clientX, e.clientY);
   if (resizing || dragging) return;
   const overNote = e.target instanceof Element && e.target.closest('.note');
   if (overNote && !current) sparkleTrail(e.clientX, e.clientY);
@@ -1448,8 +1459,16 @@ function lookAt(clientX, clientY, hold = false) {
     p.style.setProperty('--py', `${(ux * Math.sin(t) + uy * Math.cos(t)) * reach}px`);
   }
 }
+// Mouse moves and the cursor feed can each arrive many times a frame, and every look
+// measures the eyes: aim them at most once per frame.
+let lookRaf = 0;
+let lookPos = [0, 0];
+function queueLook(x, y) {
+  lookPos = [x, y];
+  if (!lookRaf) lookRaf = requestAnimationFrame(() => { lookRaf = 0; lookAt(lookPos[0], lookPos[1]); });
+}
 api.onCursor((x, y) => {
-  lookAt(x, y);
+  queueLook(x, y);
   // A click-through window gets no mouse events, so use the cursor feed to take clicks
   // back as soon as the pointer is over the card, panel or toolbar again.
   if (passthrough && !resizing && !dragging) {
@@ -1522,6 +1541,11 @@ api.init().then(({ note: n, platform, theme }) => {
   editor.dataset.placeholder = pick(PLACEHOLDERS);
   if (document.hasFocus()) document.body.classList.add('focused');
   playEnter();
+  fitTitle();
+  document.fonts.ready.then(fitTitle);
   if (wantFocus) focusText();
-  requestAnimationFrame(() => api.ready()); // main shows the window once laid out
+  // Main shows the window once laid out. Not via requestAnimationFrame: WebKit (macOS) runs
+  // no frames in a hidden window, so the note would never appear.
+  void noteEl.offsetHeight;
+  api.ready();
 });
